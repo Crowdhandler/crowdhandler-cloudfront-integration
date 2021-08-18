@@ -1,0 +1,268 @@
+"use strict";
+
+const helpers = require("./helpers/misc");
+const http_helpers = require("./helpers/http");
+
+require("source-map-support").install();
+
+module.exports.viewerRequest = async (event) => {
+  // Environment Setup
+  const APIDomain = "CROWDHANDLER_API_DOMAIN";
+  // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
+  // If true, users that fail to check-in with CrowdHandler will be trusted.
+  const failTrust = false;
+  const publicKey = "CROWDHANDLER_PUBLIC_KEY";
+  // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
+  let safetyNetSlug;
+  // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
+  const whitelabel = false;
+
+  // Extract request Meta Information
+  let request = event.Records[0].cf.request;
+  let requestHeaders = request.headers;
+  const host = requestHeaders.host[0].value;
+
+  // Forward api endpoint and public key value as headers so our viewer response function has them at hand to use
+  requestHeaders["x-ch-api-endpoint"] = [
+    {
+      key: "x-ch-api-endpoint",
+      value: APIDomain,
+    },
+  ];
+
+  requestHeaders["x-ch-public-key"] = [
+    {
+      key: "x-ch-public-key",
+      value: publicKey,
+    },
+  ];
+
+  // Used to determine request/response total time.
+  let requestStartTime = Date.now();
+  requestHeaders["x-ch-request-time"] = [
+    {
+      key: "x-ch-request-time",
+      value: `${requestStartTime}`,
+    },
+  ];
+
+  // Requested URI
+  const uri = request.uri;
+  // User Agent
+  const userAgent = requestHeaders["user-agent"][0].value;
+
+  // Make best effort to determine language
+  let language;
+  try {
+    language = requestHeaders["accept-language"][0].value.split(",")[0];
+  } catch (error) {
+    console.error("Failed to find a valid accept-language value");
+    console.error(error);
+  }
+
+  // Full URL of the protected domain.
+  const FQDN = `https://${host}${uri}`;
+  console.log(FQDN);
+
+  // Don't try and queue static assets
+  let fileExtension = uri.split(".").pop();
+
+  // No need to execute anymore of this script if the request is for a static file.
+  const creativeAssetExtensions = helpers.creativeAssetExtensions;
+  if (creativeAssetExtensions.indexOf(fileExtension) !== -1) {
+    console.log("Static file detected");
+    return request;
+  }
+
+  let queryString = helpers.queryStringParse(request.querystring, "object");
+
+  // Destructure special params from query string if they exist.
+  let {
+    "ch-code": chCode,
+    "ch-id": chID,
+    "ch-public-key": chPublicKey,
+  } = queryString || {};
+
+  // This is the right most address found in the x-forwarded-for header and can be trusted as it was discovered via the TCP connection.
+  const IPAddress = request.clientIp;
+
+  // Make sure we don't try and use undefined or null in parameters
+  if (!chCode || chCode === "undefined" || chCode === "null") {
+    chCode = "";
+  }
+
+  // Remove special params from the queryString object now that we don't need them anymore
+  if (queryString) {
+    delete queryString["ch-code"];
+    delete queryString["ch-id"];
+    delete queryString["ch-public-key"];
+  }
+
+  // Stringify queryString
+  queryString = helpers.queryStringParse(queryString, "string");
+  // Prepend & to the query string if it's not empty as we're always going to need to chain it to ?${FQDN}
+  if (queryString) {
+    queryString = `?${queryString}`;
+  }
+
+  //URL encode the targetURL to be used later in redirects
+  let targetURL;
+  if (queryString) {
+    targetURL = encodeURIComponent(FQDN + queryString);
+  } else {
+    targetURL = encodeURIComponent(FQDN);
+  }
+
+  // Parse cookies
+  const parsedCookies = helpers.parseCookies(requestHeaders);
+  let crowdhandlerCookieValue = parsedCookies["crowdhandler"];
+
+  // Prioritise tokens in the ch-id parameter and fallback to ones found in the cookie.
+  let token;
+  if (chID) {
+    console.log("Using ch-id value as token");
+    token = chID;
+  } else if (crowdhandlerCookieValue) {
+    console.log("Using cookie value as token");
+    token = crowdhandlerCookieValue;
+  } else {
+    token = null;
+  }
+
+  // Check in with CrowdHandler
+  async function checkStatus() {
+    let headers = {
+      "Content-Type": "application/json",
+      "x-api-key": publicKey,
+    };
+    let response;
+
+    if (token) {
+      try {
+        response = await http_helpers.httpGET({
+          headers: headers,
+          hostname: APIDomain,
+          method: "GET",
+          path: `/v1/requests/${token}?url=${encodeURIComponent(
+            FQDN
+          )}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
+            IPAddress
+          )}&lang=${encodeURIComponent(language)}`,
+          port: 443,
+        });
+      } catch (error) {
+        console.log(error);
+        response = error;
+      } finally {
+        return response;
+      }
+    } else {
+      try {
+        response = await http_helpers.httpPOST(
+          {
+            headers: headers,
+            hostname: APIDomain,
+            method: "POST",
+            path: "/v1/requests",
+            port: 443,
+          },
+          JSON.stringify({
+            url: FQDN,
+            ip: IPAddress,
+            agent: userAgent,
+            lang: language,
+          })
+        );
+      } catch (error) {
+        console.log(error);
+        response = error;
+      } finally {
+        return response;
+      }
+    }
+  }
+
+  let response = await checkStatus();
+  let result = JSON.parse(response).result;
+  console.log(result);
+
+  let redirect;
+  let redirectLocation;
+  let WREndpoint;
+
+  // Alter queue endpoint based on whitelabel flag value
+  switch (whitelabel) {
+    case true:
+      WREndpoint = `${host}/ch`;
+      break;
+    case false: {
+      WREndpoint = `wait.crowdhandler.com`;
+      break;
+    }
+    default:
+      WREndpoint = `wait.crowdhandler.com`;
+      break;
+  }
+
+  // Normal healthy response
+  if (result.promoted !== 1 && result.status !== 2) {
+    redirect = true;
+    redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
+    // Abnormal response. Redirect to safety net waiting room until further notice
+  } else if (
+    failTrust !== true &&
+    result.promoted !== 1 &&
+    result.status === 2
+  ) {
+    redirect = true;
+    if (safetyNetSlug) {
+      // Your custom slug
+      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    } else {
+      // Generic fallback room
+      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    }
+    // User is promoted
+  } else {
+    redirect = false;
+  }
+
+  switch (redirect) {
+    case true: {
+      // redirect
+      console.log("redirecting...");
+      return http_helpers.redirect302Response(redirectLocation);
+      break;
+    }
+    case false: {
+      // continue
+      console.log("continue...");
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+
+  console.log(result.token);
+  // This code only executes if a redirect hasn't been triggered.
+  // Pass information required by the response handler.
+  if (result.token) {
+    requestHeaders["x-ch-crowdhandler-token"] = [
+      {
+        key: "x-ch-crowdhandler-token",
+        value: result.token,
+      },
+    ];
+  }
+  if (result.responseID) {
+    requestHeaders["x-ch-responseID"] = [
+      {
+        key: "x-ch-responseID",
+        value: result.responseID,
+      },
+    ];
+  }
+
+  return request;
+};

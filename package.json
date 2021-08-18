@@ -1,0 +1,22 @@
+{
+  "name": "crowdhandler-cloudfront-integration",
+  "version": "1.0.0",
+  "description": "",
+  "main": "handler.js",
+  "scripts": {
+    "package": "serverless package --package dist",
+    "test-originResponse": "sls invoke local -f originResponse -p dummy-payloads/origin-response/response_request.json",
+    "test-viewerOverride": "sls invoke local -f viewerOverride -p dummy-payloads/viewer-override/override_request.json",
+    "test-viewerRequest-get": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/get.json",
+    "test-viewerRequest-post": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/post.json"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serverless-webpack": "^5.5.1",
+    "webpack": "^5.44.0"
+  },
+  "dependencies": {
+    "query-string": "^7.0.1"
+  }
+}
