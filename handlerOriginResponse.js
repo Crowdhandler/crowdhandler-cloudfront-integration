@@ -32,8 +32,8 @@ module.exports.originResponse = async (event) => {
   (function () {
     // Guard against the crowdhandlerResponseID value coming back null from the API
     try {
-      if (requestHeaders["x-ch-responseID"]) {
-        crowdhandlerResponseID = requestHeaders["x-ch-responseID"][0].value;
+      if (requestHeaders["x-ch-responseid"]) {
+        crowdhandlerResponseID = requestHeaders["x-ch-responseid"][0].value;
       }
     } catch (error) {
       console.error(error);
@@ -42,9 +42,13 @@ module.exports.originResponse = async (event) => {
     // Handle lack of valid token i.e. partial API responses for unprotected rooms.
     try {
       //Make sure we don't set invalid values
-      const validToken = /(.*\d+.*)/
+      const validToken = /(.*\d+.*)/;
 
-      if (requestHeaders["x-ch-crowdhandler-token"] && validToken.test(requestHeaders["x-ch-crowdhandler-token"][0].value) === true) {
+      if (
+        requestHeaders["x-ch-crowdhandler-token"] &&
+        validToken.test(requestHeaders["x-ch-crowdhandler-token"][0].value) ===
+          true
+      ) {
         crowdhandlerToken = requestHeaders["x-ch-crowdhandler-token"][0].value;
       }
     } catch (error) {
@@ -108,7 +112,7 @@ module.exports.originResponse = async (event) => {
         },
         JSON.stringify({
           httpCode: 200,
-          sampleRate: 100,
+          sampleRate: 10,
           time: totalLoadTime,
         })
       );
@@ -117,7 +121,15 @@ module.exports.originResponse = async (event) => {
     }
   }
 
-  await sendPageLoadTime();
+  // We don't want to send page performance information on every request so sampling is used.
+  const sampleRate = Math.floor(Math.random() * 10);
 
+  if (sampleRate === 9) {
+    try {
+      await sendPageLoadTime();
+    } catch (error) {
+      console.error(error);
+    }
+  }
   return response;
 };
