@@ -28,8 +28,8 @@ provider:
 
 # Function Definition
 functions:
-  viewerOverride:
-    handler: handlerViewerOverride.viewerOverride
+  originOverride:
+    handler: handlerOriginOverride.originOverride
   viewerRequest:
     handler: handlerViewerRequest.viewerRequest
   originResponse:
