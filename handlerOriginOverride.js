@@ -5,7 +5,7 @@ const http_helpers = require("./helpers/http");
 
 require("source-map-support").install();
 
-module.exports.viewerOverride = async (event) => {
+module.exports.originOverride = async (event) => {
   let request = event.Records[0].cf.request;
   let queryString = request.querystring;
   // Trim /ch/

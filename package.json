@@ -6,7 +6,7 @@
   "scripts": {
     "package": "serverless package --package dist",
     "test-originResponse": "sls invoke local -f originResponse -p dummy-payloads/origin-response/response_request.json",
-    "test-viewerOverride": "sls invoke local -f viewerOverride -p dummy-payloads/viewer-override/override_request.json",
+    "test-originOverride": "sls invoke local -f originOverride -p dummy-payloads/origin-override/override_request.json",
     "test-viewerRequest-get": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/get.json",
     "test-viewerRequest-post": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/post.json"
   },

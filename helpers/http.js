@@ -113,7 +113,7 @@ export const http200Response = function (content) {
       "cache-control": [
         {
           key: "Cache-Control",
-          value: "max-age=300; public",
+          value: "max-age=60; public",
         },
       ],
       "content-type": [
