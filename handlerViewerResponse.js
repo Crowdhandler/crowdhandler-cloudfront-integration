@@ -5,7 +5,7 @@ const http_helpers = require("./helpers/http");
 
 require("source-map-support").install();
 
-module.exports.originResponse = async (event) => {
+module.exports.viewerResponse = async (event) => {
   let APIDomain;
   let crowdhandlerResponseID;
   let crowdhandlerToken;
