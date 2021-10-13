@@ -143,9 +143,7 @@ module.exports.viewerRequest = async (event) => {
           headers: headers,
           hostname: APIDomain,
           method: "GET",
-          path: `/v1/requests/${token}?url=${encodeURIComponent(
-            FQDN
-          )}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
+          path: `/v1/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
             IPAddress
           )}&lang=${encodeURIComponent(language)}`,
           port: 443,
