@@ -229,7 +229,7 @@ module.exports.viewerRequest = async (event) => {
     case true: {
       // redirect
       console.log("redirecting...");
-      return http_helpers.redirect302Response(redirectLocation);
+      return http_helpers.redirect302Response(redirectLocation, result.token);
       break;
     }
     case false: {
