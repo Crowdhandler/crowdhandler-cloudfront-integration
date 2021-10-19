@@ -135,19 +135,42 @@ export const http200Response = function (content) {
 };
 
 // Generic 302 Response
-export const redirect302Response = function (redirect_location) {
-  const response = {
-    status: "302",
-    statusDescription: "Found",
-    headers: {
-      location: [
-        {
-          key: "Location",
-          value: redirect_location,
-        },
-      ],
-    },
-  };
+export const redirect302Response = function (redirect_location, token) {
+  let response;
+
+  if (token) {
+    response = {
+      status: "302",
+      statusDescription: "Found",
+      headers: {
+        location: [
+          {
+            key: "Location",
+            value: redirect_location,
+          },
+        ],
+        "set-cookie": [
+          {
+            key: "Set-Cookie",
+            value: `crowdhandler=${token}; path=/; Secure; HttpOnly`,
+          },
+        ],
+      },
+    };
+  } else {
+    response = {
+      status: "302",
+      statusDescription: "Found",
+      headers: {
+        location: [
+          {
+            key: "Location",
+            value: redirect_location,
+          },
+        ],
+      },
+    };
+  }
   return response;
 };
 
