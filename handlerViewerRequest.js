@@ -10,7 +10,7 @@ module.exports.viewerRequest = async (event) => {
   const APIDomain = "CROWDHANDLER_API_DOMAIN";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
   // If true, users that fail to check-in with CrowdHandler will be trusted.
-  const failTrust = false;
+  const failTrust = true;
   const publicKey = "CROWDHANDLER_PUBLIC_KEY";
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug;
