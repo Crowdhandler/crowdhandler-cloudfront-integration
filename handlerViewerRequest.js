@@ -79,8 +79,11 @@ module.exports.viewerRequest = async (event) => {
   // Destructure special params from query string if they exist.
   let {
     "ch-code": chCode,
+    "ch-fresh": chFresh,
     "ch-id": chID,
+    "ch-id-signature": chIDSignature,
     "ch-public-key": chPublicKey,
+    "ch-requested": chRequested,
   } = queryString || {};
 
   // This is the right most address found in the x-forwarded-for header and can be trusted as it was discovered via the TCP connection.
@@ -94,16 +97,22 @@ module.exports.viewerRequest = async (event) => {
   // Remove special params from the queryString object now that we don't need them anymore
   if (queryString) {
     delete queryString["ch-code"];
+    delete queryString["ch-fresh"]
     delete queryString["ch-id"];
+    delete queryString["ch-id-signature"];
     delete queryString["ch-public-key"];
+    delete queryString["ch-requested"];
   }
 
   // Stringify queryString
   queryString = helpers.queryStringParse(queryString, "string");
   // Prepend & to the query string if it's not empty as we're always going to need to chain it to ?${FQDN}
   if (queryString) {
+    //Update the querystring to remove special CH parameters
+    request.querystring = queryString;
     queryString = `?${queryString}`;
   }
+
 
   //URL encode the targetURL to be used later in redirects
   let targetURL;
@@ -118,15 +127,27 @@ module.exports.viewerRequest = async (event) => {
   let crowdhandlerCookieValue = parsedCookies["crowdhandler"];
 
   // Prioritise tokens in the ch-id parameter and fallback to ones found in the cookie.
+  let freshlyPromoted;
   let token;
   if (chID) {
     console.log("Using ch-id value as token");
+    freshlyPromoted = true;
     token = chID;
   } else if (crowdhandlerCookieValue) {
     console.log("Using cookie value as token");
     token = crowdhandlerCookieValue;
   } else {
     token = null;
+  }
+
+  if (freshlyPromoted) {
+    let redirectLocation
+    if (queryString) {
+      redirectLocation = `${FQDN}${queryString}`
+    } else {
+      redirectLocation = FQDN
+    }
+    return http_helpers.redirect302Response(redirectLocation, token);
   }
 
   // Check in with CrowdHandler

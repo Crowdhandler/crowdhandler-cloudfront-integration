@@ -45,8 +45,8 @@ export const parseCookies = function (headers) {
 
 export const queryStringParse = function (querystring, type) {
   if (querystring && type === "object") {
-    return queryString.parse(querystring);
+    return queryString.parse(querystring, {sort: false});
   } else if (querystring && type === "string") {
-    return queryString.stringify(querystring);
+    return queryString.stringify(querystring, {sort: false});
   }
 };
