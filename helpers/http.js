@@ -155,6 +155,24 @@ export const redirect302Response = function (redirect_location, token) {
             value: `crowdhandler=${token}; path=/; Secure; HttpOnly`,
           },
         ],
+        "cache-control": [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+        expires: [
+          {
+            key: "Expires",
+            value: "Fri, 01 Jan 1970 00:00:00 GMT",
+          },
+        ],
+        pragma: [
+          {
+            key: "Pragma",
+            value: "no-cache",
+          },
+        ],
       },
     };
   } else {
@@ -166,6 +184,24 @@ export const redirect302Response = function (redirect_location, token) {
           {
             key: "Location",
             value: redirect_location,
+          },
+        ],
+        "cache-control": [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+        expires: [
+          {
+            key: "Expires",
+            value: "Fri, 01 Jan 1970 00:00:00 GMT",
+          },
+        ],
+        pragma: [
+          {
+            key: "Pragma",
+            value: "no-cache",
           },
         ],
       },
