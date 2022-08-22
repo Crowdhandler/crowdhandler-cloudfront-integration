@@ -186,7 +186,7 @@ module.exports.viewerRequest = async (event) => {
             port: 443,
           },
           JSON.stringify({
-            url: FQDN,
+            url: FQDN + queryString,
             ip: IPAddress,
             agent: userAgent,
             lang: language,
