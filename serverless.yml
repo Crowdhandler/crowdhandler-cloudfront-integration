@@ -24,7 +24,7 @@ package:
 # Environment Setup
 provider:
   name: aws
-  runtime: nodejs14.x
+  runtime: nodejs16.x
 
 # Function Definition
 functions:
