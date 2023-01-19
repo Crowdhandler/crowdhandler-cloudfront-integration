@@ -74,7 +74,7 @@ module.exports.viewerResponse = async (event) => {
     if (response.headers["set-cookie"]) {
       response.headers["set-cookie"].push({
         key: "Set-Cookie",
-        value: `crowdhandler=${crowdhandlerToken}; path=/; Secure; HttpOnly`,
+        value: `crowdhandler=${crowdhandlerToken}; path=/; Secure;`,
       });
       response.headers["set-cookie"].push({
         key: "Set-Cookie",
@@ -84,7 +84,7 @@ module.exports.viewerResponse = async (event) => {
       response.headers["set-cookie"] = [
         {
           key: "Set-Cookie",
-          value: `crowdhandler=${crowdhandlerToken}; path=/; Secure; HttpOnly`,
+          value: `crowdhandler=${crowdhandlerToken}; path=/; Secure;`,
         },
       ];
       response.headers["set-cookie"].push({
