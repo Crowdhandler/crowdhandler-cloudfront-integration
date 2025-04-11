@@ -12,7 +12,6 @@
 # Happy Coding!
 
 service: crowdhandler-cloudfront-integration
-frameworkVersion: '2'
 
 # Webpack
 custom:
