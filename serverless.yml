@@ -12,7 +12,6 @@
 # Happy Coding!
 
 service: crowdhandler-cloudfront-integration
-frameworkVersion: '2'
 
 # Webpack
 custom:
@@ -24,7 +23,7 @@ package:
 # Environment Setup
 provider:
   name: aws
-  runtime: nodejs16.x
+  runtime: nodejs20.x
 
 # Function Definition
 functions:
