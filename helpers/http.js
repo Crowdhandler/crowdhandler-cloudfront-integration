@@ -152,7 +152,7 @@ export const redirect302Response = function (redirect_location, token) {
         "set-cookie": [
           {
             key: "Set-Cookie",
-            value: `crowdhandler=${token}; path=/; Secure; HttpOnly`,
+            value: `crowdhandler=${token}; path=/; Secure`,
           },
         ],
         "cache-control": [
