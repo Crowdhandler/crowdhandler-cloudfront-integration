@@ -23,7 +23,7 @@ package:
 # Environment Setup
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs22.x
 
 # Function Definition
 functions:
@@ -31,8 +31,8 @@ functions:
     handler: handlerOriginOverride.originOverride
   viewerRequest:
     handler: handlerViewerRequest.viewerRequest
-  viewerResponse:
-    handler: handlerViewerResponse.viewerResponse
+  originResponse:
+    handler: handlerOriginResponse.originResponse
 
 # Plugins
 plugins:

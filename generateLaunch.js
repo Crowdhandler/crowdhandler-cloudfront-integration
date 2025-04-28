@@ -8,7 +8,7 @@
 process.env.NODE_OPTIONS = "--openssl-legacy-provider";
 
 // S3 configuration - change these values if needed.
-const S3_REGION = "us-east-2";
+const S3_REGION = "us-east-1";
 const BUCKET_NAME = "cloudfront-integration-bundles";
 
 // Serverless package command - modify if your packaging command changes.
@@ -168,18 +168,15 @@ app.get("/generateQuickLaunchURL", async (req, res) => {
       [
         "garnished_dist/originOverride.zip",
         "garnished_dist/viewerRequest.zip",
-        "garnished_dist/viewerResponse.zip",
+        "garnished_dist/originResponse.zip",
       ],
       `dist/${publicKey}`
     );
 
     // Construct a Quick Launch URL for CloudFormation.
-    // Assumes the CloudFormation template is located in S3 at:
-    // s3://cloudfront-integration-bundles/dist/<publicKey>/template.yaml
-    const templateURL = `https://s3.${S3_REGION}.amazonaws.com/${BUCKET_NAME}/dist/${publicKey}/template.yaml`;
-    const quickLaunchURL = `https://console.aws.amazon.com/cloudformation/home?region=${S3_REGION}#/stacks/create/review?templateURL=${encodeURIComponent(
-      templateURL
-    )}`;
+    // The CloudFormation template is hardcoded to a fixed location in our S3 bucket.
+    const templateURL = "https://cloudfront-integration-bundles.s3.us-east-1.amazonaws.com/cloudformation.yaml";
+    const quickLaunchURL = `https://console.aws.amazon.com/cloudformation/home?region=${S3_REGION}#/stacks/create/review?templateURL=${encodeURIComponent(templateURL)}&stackName=crowdhandler&param_PublicKey=${publicKey}`;
 
     // Return the Quick Launch URL as JSON.
     res.json({ quickLaunchURL });
@@ -217,16 +214,18 @@ Documentation for Advanced Configurables:
 
 4. CloudFormation Quick Launch:
    - The Quick Launch URL is constructed based on the assumption that your CloudFormation
-     template is available in S3 at the path: dist/<publicKey>/template.yaml.
-   - If the template location changes, modify the URL construction logic in the GET
-     route accordingly.
-
+     template is stored at a fixed location:
+       https://cloudfront-integration-bundles.s3.us-east-2.amazonaws.com/cloudformation.yaml
+   - The S3 uploads will be placed in a folder named "dist/<publicKey>/".
+   - The CloudFormation template itself is parameterized to use the dynamic publicKey for
+     function code locations.
+   
 5. Changing Placeholders:
    - The placeholders "CROWDHANDLER_PUBLIC_KEY" and "CROWDHANDLER_API_DOMAIN" in the
      fetched code are replaced with values provided via query parameters. Update the
      replacement logic if additional placeholders are introduced.
 
-This code is now structured for public consumption with clear separation of concerns,
+This code is structured for public consumption with clear separation of concerns,
 extensive inline documentation, and easy-to-modify advanced settings.
 --------------------------------------------------------------------------------
 */

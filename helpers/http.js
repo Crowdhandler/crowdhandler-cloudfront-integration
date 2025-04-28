@@ -104,6 +104,38 @@ export const httpPUT = function (options, data) {
   });
 };
 
+export const statusResponse = function () {
+  const response = {
+    status: "200",
+    statusDescription: "OK",
+    headers: {
+      "cache-control": [
+        {
+          key: "Cache-Control",
+          value: "max-age=300; public",
+        },
+      ],
+      "content-type": [
+        {
+          key: "Content-Type",
+          value: "application/json",
+        },
+      ],
+      "Access-Control-Allow-Origin": [
+        {
+          key: "Access-Control-Allow-Origin",
+          value: "*",
+        },
+      ],
+    },
+    body: JSON.stringify({
+      integration: "cloudfront",
+      status: "ok",
+    }),
+  };
+  return response;
+};
+
 // Generic 200 response
 export const http200Response = function (content) {
   const response = {

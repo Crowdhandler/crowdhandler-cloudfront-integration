@@ -3,28 +3,15 @@ Description: >
   CloudFormation Template for creating the Lambda functions for crowdhandler.
   This template deploys three functions using code stored in S3:
     - crowdhandler-viewerRequest (from viewerRequest.zip)
-    - crowdhandler-viewerResponse (from viewerResponse.zip)
+    - crowdhandler-originResponse (from originResponse.zip)
     - crowdhandler-originOverride (from originOverride.zip)
-  It publishes a version of the viewerRequest function for Lambda@Edge.
-  A parameter for the CloudFront distribution is provided for user input.
+  It publishes a version of each function—necessary before attaching them to Lambda@Edge.
+  The S3 bucket is fixed as "cloudfront-integration-bundles" and the function code keys are derived from the PublicKey parameter.
 
 Parameters:
-  BucketName:
+  PublicKey:
     Type: String
-    Description: "The S3 bucket that contains the Lambda code packages."
-    Default: "cloudfront-integration-bundles"
-  ViewerRequestZipS3Key:
-    Type: String
-    Description: "The S3 key (path) for the viewerRequest.zip file within the bucket."
-  ViewerResponseZipS3Key:
-    Type: String
-    Description: "The S3 key (path) for the viewerResponse.zip file within the bucket."
-  OriginOverrideZipS3Key:
-    Type: String
-    Description: "The S3 key (path) for the originOverride.zip file within the bucket."
-  CloudFrontDistribution:
-    Type: String
-    Description: "The CloudFront distribution name that these functions are associated with."
+    Description: "The public key used to scope the S3 key. The code packages are expected at dist/<PublicKey>/..."
 
 Resources:
   LambdaExecutionRole:
@@ -46,36 +33,36 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: logs:CreateLogGroup
-                Resource: "arn:aws:logs:*:*:*"
+                Resource: arn:aws:logs:*:*:*
               - Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: "arn:aws:logs:*:*:log-group:*:*"
+                Resource: arn:aws:logs:*:*:log-group:*:*
 
   CrowdhandlerViewerRequestLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: crowdhandler-viewerRequest
-      Runtime: nodejs20.x
+      Runtime: nodejs22.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: handlerViewerRequest.viewerRequest
       Code:
-        S3Bucket: !Ref BucketName
-        S3Key: !Ref ViewerRequestZipS3Key
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/viewerRequest.zip"
       MemorySize: 128
-      Timeout: 30
+      Timeout: 5
 
-  CrowdhandlerViewerResponseLambda:
+  CrowdhandlerOriginResponseLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: crowdhandler-viewerResponse
-      Runtime: nodejs20.x
+      FunctionName: crowdhandler-originResponse
+      Runtime: nodejs22.x
       Role: !GetAtt LambdaExecutionRole.Arn
-      Handler: handlerViewerResponse.viewerResponse
+      Handler: handlerOriginResponse.originResponse
       Code:
-        S3Bucket: !Ref BucketName
-        S3Key: !Ref ViewerResponseZipS3Key
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/originResponse.zip"
       MemorySize: 128
       Timeout: 30
 
@@ -83,22 +70,40 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: crowdhandler-originOverride
-      Runtime: nodejs20.x
+      Runtime: nodejs22.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: handlerOriginOverride.originOverride
       Code:
-        S3Bucket: !Ref BucketName
-        S3Key: !Ref OriginOverrideZipS3Key
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/originOverride.zip"
       MemorySize: 128
       Timeout: 30
 
-  # Publish a version of the viewerRequest Lambda for Lambda@Edge associations.
+  # Publish a version of each function for Lambda@Edge association
   CrowdhandlerViewerRequestLambdaVersion:
     Type: AWS::Lambda::Version
     Properties:
       FunctionName: !Ref CrowdhandlerViewerRequestLambda
 
+  CrowdhandlerOriginResponseLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerOriginResponseLambda
+
+  CrowdhandlerOriginOverrideLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerOriginOverrideLambda
+
 Outputs:
   ViewerRequestLambdaVersionARN:
     Description: "The ARN of the published version of the crowdhandler-viewerRequest function."
     Value: !GetAtt CrowdhandlerViewerRequestLambdaVersion.Version
+
+  OriginResponseLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-originResponse function."
+    Value: !GetAtt CrowdhandlerOriginResponseLambdaVersion.Version
+
+  OriginOverrideLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-originOverride function."
+    Value: !GetAtt CrowdhandlerOriginOverrideLambdaVersion.Version

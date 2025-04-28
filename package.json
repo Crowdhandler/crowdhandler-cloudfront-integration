@@ -7,6 +7,7 @@
     "package": "serverless package --package dist",
     "upload": "aws s3 cp dist s3://cloudfront-integration-bundles/dist --recursive --exclude \"*\" --include \"*.zip\"",
     "deploy": "npm run package && npm run upload",
+    "update-cfn-template": "aws s3 cp cloudformation/cloudformation.yaml s3://cloudfront-integration-bundles/cloudformation.yaml",
     "test-originResponse": "sls invoke local -f originResponse -p dummy-payloads/origin-response/response_request.json",
     "test-originOverride": "sls invoke local -f originOverride -p dummy-payloads/origin-override/override_request.json",
     "test-viewerRequest-get": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/get.json",
