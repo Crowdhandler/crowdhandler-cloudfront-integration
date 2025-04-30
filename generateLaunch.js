@@ -24,12 +24,16 @@ const s3 = new S3Client({ region: S3_REGION });
 const express = require("express");
 const axios = require("axios");
 const { exec } = require("child_process");
+const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 
 // Initialize Express app
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Enable CORS for all routes
+app.use(cors());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
