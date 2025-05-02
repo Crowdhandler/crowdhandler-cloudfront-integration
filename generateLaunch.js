@@ -11,10 +11,6 @@ process.env.NODE_OPTIONS = "--openssl-legacy-provider";
 const S3_REGION = "us-east-1";
 const BUCKET_NAME = "cloudfront-integration-bundles";
 
-// Serverless package command - modify if your packaging command changes.
-const SERVERLESS_CMD =
-  "mv handlerViewerRequest.js handlerViewerRequest.js.base && mv handlerViewerRequest.js.garnished handlerViewerRequest.js && serverless package --package garnished_dist && mv handlerViewerRequest.js.base handlerViewerRequest.js";
-
 // -----------------------------------------------------------------------------
 // Module Imports
 // -----------------------------------------------------------------------------
@@ -164,27 +160,6 @@ async function getFunctionCode() {
   const response = await axios.get(rawCodeURL);
   return response.data;
 }
-
-/**
- * Packages the garnished code using the serverless framework.
- * This function temporarily renames files to ensure correct packaging.
- *
- * @returns {Promise<string>} - Resolves with the stdout output of the packaging command.
- */
-/*function serverlessPackage() {
-  return new Promise((resolve, reject) => {
-    exec(SERVERLESS_CMD, (err, stdout, stderr) => {
-      console.log("stdout:", stdout);
-      console.log("stderr:", stderr);
-      if (err) {
-        console.error("Error during packaging:", err);
-        reject(err);
-      } else {
-        resolve(stdout);
-      }
-    });
-  });
-}*/
 
 /**
  * Packages the garnished code using the serverless framework.
