@@ -15,7 +15,7 @@ module.exports.viewerRequest = async (event) => {
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug;
   // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
-  const whitelabel = false;
+  const whitelabel = true;
 
   // Extract request Meta Information
   let request = event.Records[0].cf.request;
