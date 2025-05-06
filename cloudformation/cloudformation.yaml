@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template for creating the Lambda functions for crowdhandler.
+  This template deploys three functions using code stored in S3:
+    - crowdhandler-viewerRequest (from viewerRequest.zip)
+    - crowdhandler-originResponse (from originResponse.zip)
+    - crowdhandler-originOverride (from originOverride.zip)
+  It publishes a version of each function—necessary before attaching them to Lambda@Edge.
+  The S3 bucket is fixed as "cloudfront-integration-bundles" and the function code keys are derived from the PublicKey parameter.
+
+Parameters:
+  PublicKey:
+    Type: String
+    Description: "The public key used to scope the S3 key. The code packages are expected at dist/<PublicKey>/..."
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - edgelambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: crowdhandler
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: logs:CreateLogGroup
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:log-group:*:*
+
+  CrowdhandlerViewerRequestLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: crowdhandler-viewerRequest
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: handlerViewerRequest.viewerRequest
+      Code:
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/viewerRequest.zip"
+      MemorySize: 128
+      Timeout: 5
+
+  CrowdhandlerOriginResponseLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: crowdhandler-originResponse
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: handlerOriginResponse.originResponse
+      Code:
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/originResponse.zip"
+      MemorySize: 128
+      Timeout: 30
+
+  CrowdhandlerOriginOverrideLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: crowdhandler-originOverride
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: handlerOriginOverride.originOverride
+      Code:
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/originOverride.zip"
+      MemorySize: 128
+      Timeout: 30
+
+  # Publish a version of each function for Lambda@Edge association
+  CrowdhandlerViewerRequestLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerViewerRequestLambda
+
+  CrowdhandlerOriginResponseLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerOriginResponseLambda
+
+  CrowdhandlerOriginOverrideLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerOriginOverrideLambda
+
+Outputs:
+  ViewerRequestLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-viewerRequest function."
+    Value: !GetAtt CrowdhandlerViewerRequestLambdaVersion.Version
+
+  OriginResponseLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-originResponse function."
+    Value: !GetAtt CrowdhandlerOriginResponseLambdaVersion.Version
+
+  OriginOverrideLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-originOverride function."
+    Value: !GetAtt CrowdhandlerOriginOverrideLambdaVersion.Version

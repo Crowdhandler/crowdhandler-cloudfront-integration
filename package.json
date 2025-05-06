@@ -5,18 +5,28 @@
   "main": "handler.js",
   "scripts": {
     "package": "serverless package --package dist",
+    "upload": "aws s3 cp dist s3://cloudfront-integration-bundles/dist --recursive --exclude \"*\" --include \"*.zip\"",
+    "deploy": "npm run package && npm run upload",
+    "update-cfn-template": "aws s3 cp cloudformation/cloudformation.yaml s3://cloudfront-integration-bundles/cloudformation.yaml",
     "test-originResponse": "sls invoke local -f originResponse -p dummy-payloads/origin-response/response_request.json",
     "test-originOverride": "sls invoke local -f originOverride -p dummy-payloads/origin-override/override_request.json",
     "test-viewerRequest-get": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/get.json",
-    "test-viewerRequest-post": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/post.json"
+    "test-viewerRequest-post": "sls invoke local -f viewerRequest -p dummy-payloads/viewer-request/post.json",
+    "cloudformation-link-gen-dev": "nodemon generateLaunch.js"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "nodemon": "^3.1.9",
     "serverless-webpack": "^5.5.1",
     "webpack": "^5.44.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.775.0",
+    "axios": "^1.8.4",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "express": "^4.21.2",
     "query-string": "^7.0.1"
   }
 }

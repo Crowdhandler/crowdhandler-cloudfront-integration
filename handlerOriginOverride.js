@@ -14,11 +14,17 @@ module.exports.originOverride = async (event) => {
   // If we have a URI after trimming it means we have been sent a slug that can be used.
   let fallbackPath = `/?${queryString}`;
   let templateDomain = "wait.crowdhandler.com";
+  let statusIdentifier = /^status$/;
   let templatePath;
   if (uri) {
     templatePath = `/${uri}`;
   } else {
     templatePath = fallbackPath;
+  }
+
+  // If the URI is a status page, return the status response.
+  if (statusIdentifier.test(uri)) {
+    return http_helpers.statusResponse();
   }
 
   // Template fetch with retry mechanic.
