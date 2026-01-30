@@ -31,6 +31,8 @@ functions:
     handler: handlerOriginOverride.originOverride
   viewerRequest:
     handler: handlerViewerRequest.viewerRequest
+  viewerResponse:
+    handler: handlerViewerResponse.viewerResponse
   originResponse:
     handler: handlerOriginResponse.originResponse
 

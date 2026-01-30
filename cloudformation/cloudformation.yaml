@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   CloudFormation Template for creating the Lambda functions for crowdhandler.
-  This template deploys three functions using code stored in S3:
+  This template deploys four functions using code stored in S3:
     - crowdhandler-viewerRequest (from viewerRequest.zip)
+    - crowdhandler-viewerResponse (from viewerResponse.zip)
     - crowdhandler-originResponse (from originResponse.zip)
     - crowdhandler-originOverride (from originOverride.zip)
   It publishes a version of each function—necessary before attaching them to Lambda@Edge.
@@ -53,6 +54,19 @@ Resources:
       MemorySize: 128
       Timeout: 5
 
+  CrowdhandlerViewerResponseLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: crowdhandler-viewerResponse
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: handlerViewerResponse.viewerResponse
+      Code:
+        S3Bucket: cloudfront-integration-bundles
+        S3Key: !Sub "dist/${PublicKey}/viewerResponse.zip"
+      MemorySize: 128
+      Timeout: 5
+
   CrowdhandlerOriginResponseLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -85,6 +99,11 @@ Resources:
     Properties:
       FunctionName: !Ref CrowdhandlerViewerRequestLambda
 
+  CrowdhandlerViewerResponseLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CrowdhandlerViewerResponseLambda
+
   CrowdhandlerOriginResponseLambdaVersion:
     Type: AWS::Lambda::Version
     Properties:
@@ -99,6 +118,10 @@ Outputs:
   ViewerRequestLambdaVersionARN:
     Description: "The ARN of the published version of the crowdhandler-viewerRequest function."
     Value: !GetAtt CrowdhandlerViewerRequestLambdaVersion.Version
+
+  ViewerResponseLambdaVersionARN:
+    Description: "The ARN of the published version of the crowdhandler-viewerResponse function."
+    Value: !GetAtt CrowdhandlerViewerResponseLambdaVersion.Version
 
   OriginResponseLambdaVersionARN:
     Description: "The ARN of the published version of the crowdhandler-originResponse function."
