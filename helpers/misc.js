@@ -51,4 +51,5 @@ export const queryStringParse = function (querystring, type) {
   } else if (querystring && type === "string") {
     return queryString.stringify(querystring, {sort: false});
   }
+  return "";
 };

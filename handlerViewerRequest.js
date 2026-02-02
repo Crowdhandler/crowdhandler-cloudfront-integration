@@ -7,11 +7,11 @@ require("source-map-support").install();
 
 module.exports.viewerRequest = async (event) => {
   // Environment Setup
-  const APIDomain = "CROWDHANDLER_API_DOMAIN";
+  const APIDomain = "api.crowdhandler.com";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
   // If true, users that fail to check-in with CrowdHandler will be trusted.
   const failTrust = true;
-  const publicKey = "CROWDHANDLER_PUBLIC_KEY";
+  const publicKey = "04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43";
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug;
   // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
@@ -238,7 +238,16 @@ module.exports.viewerRequest = async (event) => {
   if (result.promoted !== 1 && result.status !== 2) {
     redirect = true;
     redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
-    // Abnormal response. Redirect to safety net waiting room until further notice
+    // 4xx client error - always redirect to safety net (ignore failTrust)
+  } else if (result.clientError === true) {
+    console.error('[CH] API returned 4xx client error - redirecting to safety net');
+    redirect = true;
+    if (safetyNetSlug) {
+      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    } else {
+      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    }
+    // 5xx server error - respect failTrust setting
   } else if (
     failTrust !== true &&
     result.promoted !== 1 &&

@@ -155,9 +155,8 @@ async function uploadFiles(files, directory) {
  * @returns {Promise<string>} - Resolves with the function code as a string.
  */
 async function getFunctionCode() {
-  // TODO: Change back to master before merging
   const rawCodeURL =
-    "https://raw.githubusercontent.com/Crowdhandler/crowdhandler-cloudfront-integration/refs/heads/maintenance/robustness-review/handlerViewerRequest.js";
+    "https://raw.githubusercontent.com/Crowdhandler/crowdhandler-cloudfront-integration/refs/heads/master/handlerViewerRequest.js";
   const response = await axios.get(rawCodeURL);
   return response.data;
 }
