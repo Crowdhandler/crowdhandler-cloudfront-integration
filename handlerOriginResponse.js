@@ -24,7 +24,6 @@ module.exports.originResponse = async (event) => {
   // No need to execute anymore of this script if the request is for a static file.
   const creativeAssetExtensions = helpers.creativeAssetExtensions;
   if (creativeAssetExtensions.indexOf(fileExtension) !== -1) {
-    console.log("Static file detected");
     return response;
   }
 
@@ -56,43 +55,20 @@ module.exports.originResponse = async (event) => {
       return response;
     }
 
-    APIDomain = requestHeaders["x-ch-api-endpoint"][0].value;
-    publicKey = requestHeaders["x-ch-public-key"][0].value;
-    requestTime = requestHeaders["x-ch-request-time"][0].value;
+    APIDomain = requestHeaders["x-ch-api-endpoint"]?.[0]?.value;
+    publicKey = requestHeaders["x-ch-public-key"]?.[0]?.value;
+    requestTime = requestHeaders["x-ch-request-time"]?.[0]?.value;
   })();
 
-  // If we don't have a valid crowdhandlerToken by this stage return response.
-  if (!crowdhandlerToken) {
+  // If we don't have required headers or a valid crowdhandlerToken, return response early.
+  if (!crowdhandlerToken || !APIDomain || !publicKey || !requestTime) {
     return response;
   }
 
   // Requested Domain
   const host = requestHeaders.host[0].value;
 
-  // Set cookies
-  (function () {
-    if (response.headers["set-cookie"]) {
-      response.headers["set-cookie"].push({
-        key: "Set-Cookie",
-        value: `crowdhandler=${crowdhandlerToken}; path=/; Secure;`,
-      });
-      response.headers["set-cookie"].push({
-        key: "Set-Cookie",
-        value: `crowdhandler_integration=cloudfront; path=/; Secure;`,
-      });
-    } else {
-      response.headers["set-cookie"] = [
-        {
-          key: "Set-Cookie",
-          value: `crowdhandler=${crowdhandlerToken}; path=/; Secure;`,
-        },
-      ];
-      response.headers["set-cookie"].push({
-        key: "Set-Cookie",
-        value: `crowdhandler_integration=cloudfront; path=/; Secure;`,
-      });
-    }
-  })();
+  // Cookies now set in viewer-response (fires on cached responses too)
 
   const totalLoadTime = Date.now() - requestTime;
 

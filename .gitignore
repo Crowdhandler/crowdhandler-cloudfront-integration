@@ -11,3 +11,5 @@ dummy-payloads
 dist/*.json
 garnished_dist/*
 .DS_Store
+cloudfront.md
+TODO.md

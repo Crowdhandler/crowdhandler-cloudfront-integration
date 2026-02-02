@@ -255,6 +255,7 @@ app.get("/generateQuickLaunchURL", async (req, res) => {
       [
         "garnished_dist/originOverride.zip",
         "garnished_dist/viewerRequest.zip",
+        "garnished_dist/viewerResponse.zip",
         "garnished_dist/originResponse.zip",
       ],
       `dist/${publicKey}`

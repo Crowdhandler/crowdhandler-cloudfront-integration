@@ -7,11 +7,11 @@ require("source-map-support").install();
 
 module.exports.viewerRequest = async (event) => {
   // Environment Setup
-  const APIDomain = "CROWDHANDLER_API_DOMAIN";
+  const APIDomain = "api.crowdhandler.com";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
   // If true, users that fail to check-in with CrowdHandler will be trusted.
   const failTrust = true;
-  const publicKey = "CROWDHANDLER_PUBLIC_KEY";
+  const publicKey = "04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43";
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug;
   // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
@@ -49,20 +49,18 @@ module.exports.viewerRequest = async (event) => {
   // Requested URI
   const uri = request.uri;
   // User Agent
-  const userAgent = requestHeaders["user-agent"][0].value;
+  const userAgent = requestHeaders["user-agent"]?.[0]?.value || null;
 
   // Make best effort to determine language
-  let language;
+  let language = null;
   try {
     language = requestHeaders["accept-language"][0].value.split(",")[0];
   } catch (error) {
-    console.error("Failed to find a valid accept-language value");
-    console.error(error);
+    // Accept-language header not present - not critical
   }
 
   // Full URL of the protected domain.
   const FQDN = `https://${host}${uri}`;
-  console.log(FQDN);
 
   // Don't try and queue static assets
   let fileExtension = uri.split(".").pop();
@@ -70,7 +68,6 @@ module.exports.viewerRequest = async (event) => {
   // No need to execute anymore of this script if the request is for a static file.
   const creativeAssetExtensions = helpers.creativeAssetExtensions;
   if (creativeAssetExtensions.indexOf(fileExtension) !== -1) {
-    console.log("Static file detected");
     return request;
   }
 
@@ -87,7 +84,7 @@ module.exports.viewerRequest = async (event) => {
   } = queryString || {};
 
   // This is the right most address found in the x-forwarded-for header and can be trusted as it was discovered via the TCP connection.
-  const IPAddress = request.clientIp;
+  const IPAddress = request.clientIp || null;
 
   // Make sure we don't try and use undefined or null in parameters
   if (!chCode || chCode === "undefined" || chCode === "null") {
@@ -129,15 +126,17 @@ module.exports.viewerRequest = async (event) => {
   // Prioritise tokens in the ch-id parameter and fallback to ones found in the cookie.
   let freshlyPromoted;
   let token;
+  let tokenSource;
   if (chID) {
-    console.log("Using ch-id value as token");
     freshlyPromoted = true;
     token = chID;
+    tokenSource = 'param';
   } else if (crowdhandlerCookieValue) {
-    console.log("Using cookie value as token");
     token = crowdhandlerCookieValue;
+    tokenSource = 'cookie';
   } else {
     token = null;
+    tokenSource = 'new';
   }
 
   if (freshlyPromoted) {
@@ -170,7 +169,7 @@ module.exports.viewerRequest = async (event) => {
           port: 443,
         });
       } catch (error) {
-        console.log(error);
+        console.error('CrowdHandler API GET failed:', error);
         response = error;
       } finally {
         return response;
@@ -193,7 +192,7 @@ module.exports.viewerRequest = async (event) => {
           })
         );
       } catch (error) {
-        console.log(error);
+        console.error('CrowdHandler API POST failed:', error);
         response = error;
       } finally {
         return response;
@@ -202,8 +201,20 @@ module.exports.viewerRequest = async (event) => {
   }
 
   let response = await checkStatus();
-  let result = JSON.parse(response).result;
-  console.log(result);
+  let result;
+  try {
+    result = JSON.parse(response).result;
+  } catch (error) {
+    console.error("Failed to parse API response:", error);
+    // Fallback result triggers failTrust logic
+    result = {
+      status: 2,
+      promoted: null,
+      token: null,
+      slug: null,
+      responseID: null,
+    };
+  }
 
   let redirect;
   let redirectLocation;
@@ -227,7 +238,16 @@ module.exports.viewerRequest = async (event) => {
   if (result.promoted !== 1 && result.status !== 2) {
     redirect = true;
     redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
-    // Abnormal response. Redirect to safety net waiting room until further notice
+    // 4xx client error - always redirect to safety net (ignore failTrust)
+  } else if (result.clientError === true) {
+    console.error('[CH] API returned 4xx client error - redirecting to safety net');
+    redirect = true;
+    if (safetyNetSlug) {
+      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    } else {
+      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
+    }
+    // 5xx server error - respect failTrust setting
   } else if (
     failTrust !== true &&
     result.promoted !== 1 &&
@@ -248,22 +268,17 @@ module.exports.viewerRequest = async (event) => {
 
   switch (redirect) {
     case true: {
-      // redirect
-      console.log("redirecting...");
+      console.log(`[CH] ${host}${uri} | src:${tokenSource} | action:redirect | token:${result.token || token || 'none'}`);
       return http_helpers.redirect302Response(redirectLocation, result.token);
-      break;
     }
     case false: {
-      // continue
-      console.log("continue...");
+      console.log(`[CH] ${host}${uri} | src:${tokenSource} | action:allow | token:${result.token || 'none'}`);
       break;
     }
     default: {
       break;
     }
   }
-
-  console.log(result.token);
   // This code only executes if a redirect hasn't been triggered.
   // Pass information required by the response handler.
   if (result.token) {

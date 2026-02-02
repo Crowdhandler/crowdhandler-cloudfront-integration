@@ -50,7 +50,7 @@ module.exports.originOverride = async (event) => {
       });
       return response;
     } catch (error) {
-      console.log(error);
+      console.error('Template fetch failed:', error);
       response = null;
       return response;
     }
@@ -67,6 +67,6 @@ module.exports.originOverride = async (event) => {
     // Handle failure to retrieve template
   } else {
     let errorResponse = http_helpers.error404Response();
-    throw errorResponse;
+    return errorResponse;
   }
 };

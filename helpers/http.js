@@ -1,8 +1,30 @@
 const https = require("https");
 
+// Server error response (5xx, network errors) - respects failTrust setting
 const dummyResponseData = {
   result: {
     status: 2,
+    token: null,
+    title: null,
+    position: null,
+    live_position: null,
+    promoted: null,
+    urlRedirect: null,
+    onsale: null,
+    message: null,
+    slug: null,
+    priority: null,
+    priorityAvailable: null,
+    logo: null,
+    ttl: null,
+  },
+};
+
+// Client error response (4xx) - never triggers failTrust, always safety net
+const clientErrorResponseData = {
+  result: {
+    status: 2,
+    clientError: true,
     token: null,
     title: null,
     position: null,
@@ -25,7 +47,11 @@ export const httpGET = function (options) {
   return new Promise(function (resolve, reject) {
     var req = https.request(options, function (res) {
       // reject on bad status
-      if (res.statusCode < 200 || res.statusCode >= 300) {
+      if (res.statusCode >= 400 && res.statusCode < 500) {
+        console.error(`[CH] API 4xx: ${res.statusCode}`);
+        reject(JSON.stringify(clientErrorResponseData));
+      } else if (res.statusCode < 200 || res.statusCode >= 300) {
+        console.error(`[CH] API 5xx: ${res.statusCode}`);
         reject(JSON.stringify(dummyResponseData));
       }
       // cumulate data
@@ -58,7 +84,11 @@ export const httpPOST = function (options, data) {
   return new Promise(function (resolve, reject) {
     var req = https.request(options, function (res) {
       // reject on bad status
-      if (res.statusCode < 200 || res.statusCode >= 300) {
+      if (res.statusCode >= 400 && res.statusCode < 500) {
+        console.error(`[CH] API 4xx: ${res.statusCode}`);
+        reject(JSON.stringify(clientErrorResponseData));
+      } else if (res.statusCode < 200 || res.statusCode >= 300) {
+        console.error(`[CH] API 5xx: ${res.statusCode}`);
         reject(JSON.stringify(dummyResponseData));
       }
       // cumulate data

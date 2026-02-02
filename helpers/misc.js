@@ -36,7 +36,9 @@ export const parseCookies = function (headers) {
     headers.cookie[0].value.split(";").forEach((cookie) => {
       if (cookie) {
         const parts = cookie.split("=");
-        parsedCookie[parts[0].trim()] = parts[1].trim();
+        if (parts[1] !== undefined) {
+          parsedCookie[parts[0].trim()] = parts[1].trim();
+        }
       }
     });
   }
@@ -49,4 +51,5 @@ export const queryStringParse = function (querystring, type) {
   } else if (querystring && type === "string") {
     return queryString.stringify(querystring, {sort: false});
   }
+  return "";
 };
