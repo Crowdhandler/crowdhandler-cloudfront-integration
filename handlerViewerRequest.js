@@ -7,11 +7,11 @@ require("source-map-support").install();
 
 module.exports.viewerRequest = async (event) => {
   // Environment Setup
-  const APIDomain = "api.crowdhandler.com";
+  const APIDomain = "CROWDHANDLER_API_DOMAIN";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
   // If true, users that fail to check-in with CrowdHandler will be trusted.
   const failTrust = true;
-  const publicKey = "04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43";
+  const publicKey = "CROWDHANDLER_PUBLIC_KEY";
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug;
   // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
