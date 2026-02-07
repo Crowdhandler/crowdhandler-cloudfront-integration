@@ -5,8 +5,9 @@ const helpers = require("./helpers/misc");
 require("source-map-support").install();
 
 module.exports.viewerResponse = (event, context, callback) => {
-  const request = event.Records[0].cf.request;
   const response = event.Records[0].cf.response;
+  try {
+  const request = event.Records[0].cf.request;
   const requestHeaders = request.headers;
   const uri = request.uri;
 
@@ -53,4 +54,8 @@ module.exports.viewerResponse = (event, context, callback) => {
   });
 
   return callback(null, response);
+  } catch (error) {
+    console.error('[CH] Unhandled error in viewerResponse - failing open:', error);
+    return callback(null, response);
+  }
 };

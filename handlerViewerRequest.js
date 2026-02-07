@@ -6,6 +6,8 @@ const http_helpers = require("./helpers/http");
 require("source-map-support").install();
 
 module.exports.viewerRequest = async (event) => {
+  let request = event.Records[0].cf.request;
+  try {
   // Environment Setup
   const APIDomain = "CROWDHANDLER_API_DOMAIN";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
@@ -18,7 +20,6 @@ module.exports.viewerRequest = async (event) => {
   const whitelabel = true;
 
   // Extract request Meta Information
-  let request = event.Records[0].cf.request;
   let requestHeaders = request.headers;
   const host = requestHeaders.host[0].value;
 
@@ -139,6 +140,13 @@ module.exports.viewerRequest = async (event) => {
     tokenSource = 'new';
   }
 
+  // Validate token format - must contain at least one digit
+  const validToken = /(.*\d+.*)/;
+  if (token && !validToken.test(token)) {
+    token = null;
+    tokenSource = 'new';
+  }
+
   if (freshlyPromoted) {
     let redirectLocation
     if (queryString) {
@@ -157,9 +165,17 @@ module.exports.viewerRequest = async (event) => {
     };
     let response;
 
-    if (token) {
-      try {
-        response = await http_helpers.httpGET({
+    let timeoutHandle;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(new Error('API Communication Timed Out!'));
+      }, http_helpers.API_TIMEOUT_MS);
+    });
+
+    try {
+      let apiCall;
+      if (token) {
+        apiCall = http_helpers.httpGET({
           headers: headers,
           hostname: APIDomain,
           method: "GET",
@@ -168,15 +184,8 @@ module.exports.viewerRequest = async (event) => {
           )}&lang=${encodeURIComponent(language)}`,
           port: 443,
         });
-      } catch (error) {
-        console.error('CrowdHandler API GET failed:', error);
-        response = error;
-      } finally {
-        return response;
-      }
-    } else {
-      try {
-        response = await http_helpers.httpPOST(
+      } else {
+        apiCall = http_helpers.httpPOST(
           {
             headers: headers,
             hostname: APIDomain,
@@ -191,12 +200,14 @@ module.exports.viewerRequest = async (event) => {
             lang: language,
           })
         );
-      } catch (error) {
-        console.error('CrowdHandler API POST failed:', error);
-        response = error;
-      } finally {
-        return response;
       }
+      response = await Promise.race([apiCall, timeoutPromise]);
+    } catch (error) {
+      console.error('CrowdHandler API call failed:', error.message || error);
+      response = error;
+    } finally {
+      clearTimeout(timeoutHandle);
+      return response;
     }
   }
 
@@ -299,4 +310,8 @@ module.exports.viewerRequest = async (event) => {
   }
 
   return request;
+  } catch (error) {
+    console.error('[CH] Unhandled error in viewerRequest - failing open:', error);
+    return request;
+  }
 };
