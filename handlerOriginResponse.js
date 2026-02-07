@@ -6,6 +6,8 @@ const http_helpers = require("./helpers/http");
 require("source-map-support").install();
 
 module.exports.originResponse = async (event) => {
+  let response = event.Records[0].cf.response;
+  try {
   let APIDomain;
   let crowdhandlerResponseID;
   let crowdhandlerToken;
@@ -14,7 +16,6 @@ module.exports.originResponse = async (event) => {
 
   // Infer useful information from the request event and save it
   let request = event.Records[0].cf.request;
-  let response = event.Records[0].cf.response;
   const requestHeaders = request.headers;
   const uri = request.uri;
 
@@ -108,4 +109,8 @@ module.exports.originResponse = async (event) => {
     }
   }
   return response;
+  } catch (error) {
+    console.error('[CH] Unhandled error in originResponse - failing open:', error);
+    return response;
+  }
 };

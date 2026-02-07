@@ -1,5 +1,7 @@
 const https = require("https");
 
+export const API_TIMEOUT_MS = 2000;
+
 // Server error response (5xx, network errors) - respects failTrust setting
 const dummyResponseData = {
   result: {
