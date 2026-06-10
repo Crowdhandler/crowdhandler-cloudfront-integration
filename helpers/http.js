@@ -22,7 +22,7 @@ const dummyResponseData = {
   },
 };
 
-// Client error response (4xx) - never triggers failTrust, always safety net
+// Client error response (4xx, excluding 429) - never triggers failTrust, always safety net
 const clientErrorResponseData = {
   result: {
     status: 2,
@@ -49,7 +49,11 @@ export const httpGET = function (options) {
   return new Promise(function (resolve, reject) {
     var req = https.request(options, function (res) {
       // reject on bad status
-      if (res.statusCode >= 400 && res.statusCode < 500) {
+      // 429 throttle is treated as a server error so failTrust is respected
+      if (res.statusCode === 429) {
+        console.error(`[CH] API 429: throttled`);
+        reject(JSON.stringify(dummyResponseData));
+      } else if (res.statusCode >= 400 && res.statusCode < 500) {
         console.error(`[CH] API 4xx: ${res.statusCode}`);
         reject(JSON.stringify(clientErrorResponseData));
       } else if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -86,7 +90,11 @@ export const httpPOST = function (options, data) {
   return new Promise(function (resolve, reject) {
     var req = https.request(options, function (res) {
       // reject on bad status
-      if (res.statusCode >= 400 && res.statusCode < 500) {
+      // 429 throttle is treated as a server error so failTrust is respected
+      if (res.statusCode === 429) {
+        console.error(`[CH] API 429: throttled`);
+        reject(JSON.stringify(dummyResponseData));
+      } else if (res.statusCode >= 400 && res.statusCode < 500) {
         console.error(`[CH] API 4xx: ${res.statusCode}`);
         reject(JSON.stringify(clientErrorResponseData));
       } else if (res.statusCode < 200 || res.statusCode >= 300) {

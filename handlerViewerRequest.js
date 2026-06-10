@@ -245,8 +245,19 @@ module.exports.viewerRequest = async (event) => {
       break;
   }
 
-  // Normal healthy response
-  if (result.promoted !== 1 && result.status !== 2) {
+  // Throttle response (status 6) - treated as a server error, respect failTrust setting
+  if (result.status === 6 && failTrust === true) {
+    redirect = false;
+  } else if (result.status === 6) {
+    console.error("[CH] API throttle response (status 6) - redirecting to safety net");
+    redirect = true;
+    if (safetyNetSlug) {
+      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
+    } else {
+      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
+    }
+    // Normal healthy response
+  } else if (result.promoted !== 1 && result.status !== 2) {
     redirect = true;
     redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
     // 4xx client error - always redirect to safety net (ignore failTrust)
