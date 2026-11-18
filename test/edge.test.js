@@ -57,7 +57,7 @@ function replaceOnce(code, from, to) {
 }
 
 // ---- https stub -----------------------------------------------------------
-// respond(call) returns { status, body } | { hang: true } | { error: true }.
+// respond(call) returns { status, body, cutOff? } | { hang: true } | { error: true }.
 let respond;
 let calls = [];
 https.request = function (options, onResponse) {
@@ -91,7 +91,8 @@ https.request = function (options, onResponse) {
         res.resume = () => {};
         onResponse(res);
         if (outcome.body !== undefined) res.emit("data", outcome.body);
-        res.emit("end");
+        // cutOff: the connection drops mid-body, so the response never ends.
+        if (!outcome.cutOff) res.emit("end");
       }
       req.emit("close");
     });
@@ -357,6 +358,15 @@ test("override: failing template host gets three attempts, then the uncached inl
   assert.strictEqual(res.status, "200");
   assert(res.body.includes('http-equiv="refresh"'));
   assert.strictEqual(res.headers["cache-control"][0].value, "no-cache, no-store, must-revalidate");
+});
+
+test("override: a template response cut off part-way is retried, then falls back", async ({ open }) => {
+  respond = () => ({ status: 200, body: "<html>ro", cutOff: true });
+  const started = Date.now();
+  const res = await open.originOverride(overrideEvent("/ch/room"));
+  assert.strictEqual(calls.length, 3);
+  assert(res.body.includes('http-equiv="refresh"'));
+  assert(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
 });
 
 test("override: hung template host is cut off within the time budget", async ({ open }) => {

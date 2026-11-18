@@ -16,8 +16,13 @@ require("source-map-support").install();
  * Still invisible to any trigger: errors CloudFront generates itself, e.g.
  * origin read timeouts (504). Those only appear in CloudFront logs.
  */
-module.exports.originResponse = async (event) => {
+module.exports.originResponse = async (event, context) => {
   let response = event.Records[0].cf.response;
+  // Belt and braces: the sample's background response-drain must never hold
+  // the invocation open once the response is returned.
+  if (context) {
+    context.callbackWaitsForEmptyEventLoop = false;
+  }
   try {
     const request = event.Records[0].cf.request;
     const requestHeaders = request.headers;

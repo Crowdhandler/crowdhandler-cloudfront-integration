@@ -79,15 +79,20 @@ export const httpGET = function (options) {
         resolve(body);
       });
     });
+    let deadline;
     if (options.timeout) {
       // Destroy triggers the 'error' handler below, which rejects.
-      const deadline = setTimeout(function () {
+      deadline = setTimeout(function () {
         req.destroy(new Error(`timeout after ${options.timeout}ms`));
       }, options.timeout);
-      req.on("close", function () {
-        clearTimeout(deadline);
-      });
     }
+    // A response cut off part-way closes the request with neither a response
+    // 'end' nor a request 'error'. Reject so the caller isn't left pending;
+    // a no-op when the promise has already settled.
+    req.on("close", function () {
+      clearTimeout(deadline);
+      reject(JSON.stringify(dummyResponseData));
+    });
     // reject on request error
     req.on("error", function (err) {
       // This is not a "Second reject", just a different sort of failure
