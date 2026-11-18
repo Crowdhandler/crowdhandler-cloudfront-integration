@@ -37,13 +37,17 @@ module.exports.viewerRequest = async (event) => {
   try {
   // Extract request Meta Information
   let requestHeaders = request.headers;
-  const host = requestHeaders.host[0].value;
 
-  // Strip any viewer-supplied copies of the internal control headers before
-  // any early return, so forged values can't reach the response handlers.
-  // The remaining control headers are overwritten just below.
+  // Strip any viewer-supplied copies of the internal control headers first,
+  // before anything that can throw or return early, so forged values can't
+  // reach the response handlers on any path (including the fail-open one).
   delete requestHeaders["x-ch-crowdhandler-token"];
   delete requestHeaders["x-ch-responseid"];
+  delete requestHeaders["x-ch-api-endpoint"];
+  delete requestHeaders["x-ch-public-key"];
+  delete requestHeaders["x-ch-request-time"];
+
+  const host = requestHeaders.host[0].value;
 
   // Forward api endpoint and public key value as headers so our viewer response function has them at hand to use
   requestHeaders["x-ch-api-endpoint"] = [

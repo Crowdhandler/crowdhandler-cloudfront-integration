@@ -156,6 +156,17 @@ test("static asset: forged control headers are stripped, no API call", async ({ 
   assert.strictEqual(res.headers["x-ch-api-endpoint"][0].value, "api.test.example");
 });
 
+test("error before the control headers are set: forged copies still don't survive the fail-open path", async ({ open }) => {
+  respond = () => assert.fail("no API call expected");
+  const event = viewerRequestEvent({
+    headers: { "x-ch-crowdhandler-token": h("forged1"), "x-ch-responseid": h("forged2"), "x-ch-api-endpoint": h("evil.example"), "x-ch-public-key": h("forged3"), "x-ch-request-time": h("1") },
+  });
+  delete event.Records[0].cf.request.headers.host;
+  const res = await open.viewerRequest(event);
+  assert.strictEqual(res.status, undefined);
+  assert.deepStrictEqual(Object.keys(res.headers).filter((k) => k.startsWith("x-ch-")), []);
+});
+
 test("queued: redirects to the waiting room and sets the cookie", async ({ open }) => {
   respond = api({ status: 1, promoted: 0, token: "tok0new1", slug: "room" });
   const res = await open.viewerRequest(viewerRequestEvent({ querystring: "a=1" }));
