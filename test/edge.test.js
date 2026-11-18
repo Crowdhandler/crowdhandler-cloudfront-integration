@@ -249,6 +249,53 @@ test("safety net URL: ch-code and token cannot add parameters of their own", asy
   assert(!query.includes("#"), query);
 });
 
+test("malformed tokens are discarded and the visitor checks in as new", async ({ open }) => {
+  respond = api({ status: 1, promoted: 1, token: "tok0fresh1", responseID: "resp1" });
+  for (const bad of ["1 2", "tok0%ZZ", "tok0/../x", "tok0\u0000x", "nodigits", "tok0 RBHG4n25KRDl", "tok0RBHG4n25KRDl\r\nX: y", "ab1"]) {
+    calls = [];
+    const res = await open.viewerRequest(viewerRequestEvent({ cookie: `crowdhandler=${bad}` }));
+    assert.deepStrictEqual([calls[0].options.method, calls[0].options.path], ["POST", "/v1/requests"], JSON.stringify(bad));
+    assert.strictEqual(res.headers["x-ch-crowdhandler-token"][0].value, "tok0fresh1");
+  }
+  calls = [];
+  await open.viewerRequest(viewerRequestEvent({ cookie: "crowdhandler=tok0RBHG4n25KRDl" }));
+  assert(calls[0].options.path.startsWith("/v1/requests/tok0RBHG4n25KRDl?"), calls[0].options.path);
+});
+
+test("ch-id carrying cookie attributes: clean redirect, no cookie planted", async ({ open }) => {
+  respond = () => assert.fail("no API call expected");
+  const res = await open.viewerRequest(viewerRequestEvent({ querystring: "ch-id=" + encodeURIComponent("abc1; Domain=.example.com; Max-Age=99999999") }));
+  assert.strictEqual(res.status, "302");
+  assert.strictEqual(location(res), "https://shop.example.com/tickets");
+  assert.strictEqual(res.headers["set-cookie"], undefined);
+});
+
+test("a request Node refuses to build is a safety net, even with failTrust on", async ({ open }) => {
+  const request = https.request;
+  https.request = () => {
+    const error = new TypeError("Request path contains unescaped characters");
+    error.code = "ERR_UNESCAPED_CHARACTERS";
+    throw error;
+  };
+  try {
+    for (const cookie of [undefined, "crowdhandler=tok0abc123"]) {
+      const res = await open.viewerRequest(viewerRequestEvent({ cookie }));
+      assert.strictEqual(res.status, "302");
+      assert(location(res).startsWith("https://shop.example.com/ch/?url="), location(res));
+    }
+  } finally {
+    https.request = request;
+  }
+});
+
+test("queue redirect: ch-code cannot add parameters of its own", async ({ open }) => {
+  respond = api({ status: 1, promoted: 0, token: "tok0new1", slug: "room" });
+  const res = await open.viewerRequest(viewerRequestEvent({ querystring: "ch-code=" + encodeURIComponent("x&url=https://other.example#") }));
+  const query = location(res).split("?")[1];
+  assert.deepStrictEqual(query.split("&").map((p) => p.split("=")[0]), ["url", "ch-code", "ch-id", "ch-public-key"]);
+  assert(!query.includes("#"), query);
+});
+
 test("ch-id without a digit: clean redirect, no cookie planted", async ({ open }) => {
   respond = () => assert.fail("no API call expected");
   const res = await open.viewerRequest(viewerRequestEvent({ querystring: "a=1&ch-id=notatoken" }));

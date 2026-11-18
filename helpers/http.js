@@ -24,7 +24,7 @@ const dummyResponseData = {
 };
 
 // Client error response (4xx, excluding 429) - never triggers failTrust, always safety net
-const clientErrorResponseData = {
+export const clientErrorResponseData = {
   result: {
     status: 2,
     clientError: true,

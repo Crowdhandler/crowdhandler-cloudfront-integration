@@ -19,7 +19,6 @@ const helpers = require("./misc");
 // drift apart.
 export const SAMPLE_ONE_IN = 3;
 const SEND_BUDGET_MS = 250;
-const TOKEN_SHAPE = /(.*\d+.*)/;
 
 // Whether the URI is a static file that is never queued (last-dot extension).
 export const isStaticAsset = function (uri) {
@@ -30,7 +29,7 @@ export const isStaticAsset = function (uri) {
 // The token viewer-request forwarded, or undefined if absent/malformed.
 export const forwardedToken = function (requestHeaders) {
   const value = requestHeaders?.["x-ch-crowdhandler-token"]?.[0]?.value;
-  return typeof value === "string" && TOKEN_SHAPE.test(value) ? value : undefined;
+  return helpers.isValidToken(value) ? value : undefined;
 };
 
 // The multiplier the API applies to one report.

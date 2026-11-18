@@ -171,9 +171,10 @@ module.exports.viewerRequest = async (event) => {
     tokenSource = 'new';
   }
 
-  // Validate token format - must contain at least one digit
-  const validToken = /(.*\d+.*)/;
-  if (token && !validToken.test(token)) {
+  // Validate token format - URL-safe characters only, with at least one digit (see helpers/misc.js).
+  // A malformed token is discarded, so it is never planted as a cookie and the visitor checks in as new.
+  if (token && !helpers.isValidToken(token)) {
+    console.log("[CH] token discarded (malformed)");
     token = null;
     tokenSource = 'new';
   }
@@ -210,7 +211,7 @@ module.exports.viewerRequest = async (event) => {
           headers: headers,
           hostname: APIDomain,
           method: "GET",
-          path: `/v1/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
+          path: `/v1/requests/${encodeURIComponent(token)}?url=${targetURL}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
             IPAddress
           )}&lang=${encodeURIComponent(language)}`,
           port: 443,
@@ -235,7 +236,14 @@ module.exports.viewerRequest = async (event) => {
       response = await Promise.race([apiCall, timeoutPromise]);
     } catch (error) {
       console.error('CrowdHandler API call failed:', error.message || error);
-      response = error;
+      // A request Node refused to build (ERR_UNESCAPED_CHARACTERS, ERR_INVALID_CHAR, ...) is our own
+      // input being malformed, never the API failing, so it is handled like a 4xx: always the safety net.
+      // Network errors carry codes such as ECONNRESET and ETIMEDOUT, not the ERR_ prefix.
+      if (error && typeof error.code === "string" && error.code.indexOf("ERR_") === 0) {
+        response = JSON.stringify(http_helpers.clientErrorResponseData);
+      } else {
+        response = error;
+      }
     } finally {
       clearTimeout(timeoutHandle);
       return response;
@@ -277,7 +285,7 @@ module.exports.viewerRequest = async (event) => {
     // Normal healthy response
   } else if (result.promoted !== 1 && result.status !== 2) {
     redirect = true;
-    redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
+    redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${encodeURIComponent(chCode || "")}&ch-id=${encodeURIComponent(result.token || "")}&ch-public-key=${publicKey}`;
     // 4xx client error - always redirect to safety net (ignore failTrust)
   } else if (result.clientError === true) {
     console.error('[CH] API returned 4xx client error - redirecting to safety net');
