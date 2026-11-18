@@ -217,7 +217,7 @@ export const statusResponse = function () {
           value: "application/json",
         },
       ],
-      "Access-Control-Allow-Origin": [
+      "access-control-allow-origin": [
         {
           key: "Access-Control-Allow-Origin",
           value: "*",

@@ -31,7 +31,9 @@ function build(name, rewrite) {
   return new Promise((resolve, reject) => {
     webpack(
       {
-        mode: "development",
+        // As deployed: webpack.config.js builds in production mode, unminified.
+        mode: "production",
+        optimization: { minimize: false },
         devtool: false,
         target: "node",
         node: false,
@@ -57,7 +59,8 @@ function replaceOnce(code, from, to) {
 }
 
 // ---- https stub -----------------------------------------------------------
-// respond(call) returns { status, body, cutOff? } | { hang: true } | { error: true }.
+// respond(call) returns { status, body, cutOff? } | { hang: true } | { error: true }
+// | { flushOnly: true } (the request is written but the server never answers).
 let respond;
 let calls = [];
 https.request = function (options, onResponse) {
@@ -85,6 +88,7 @@ https.request = function (options, onResponse) {
         return req.emit("close");
       }
       req.emit("finish");
+      if (outcome.flushOnly) return;
       if (onResponse) {
         const res = new EventEmitter();
         res.statusCode = outcome.status;
@@ -119,7 +123,9 @@ function responseEvent({ status = "200", uri = "/tickets", headers } = {}) {
   };
   return { Records: [{ cf: { request: { uri, headers: headers || defaults }, response: { status, headers: {} } } }] };
 }
-const viewerResponse = (fns, event) => new Promise((resolve) => fns.viewerResponse(event, {}, (err, res) => resolve(res)));
+const viewerResponse = (fns, event, context = {}) => new Promise((resolve) => fns.viewerResponse(event, context, (err, res) => resolve(res)));
+// Generated responses and forwarded requests must only use lowercase header keys.
+const assertLowercaseKeys = (headers) => assert.deepStrictEqual(Object.keys(headers).filter((k) => k !== k.toLowerCase()), []);
 const location = (res) => res.headers.location[0].value;
 const withRandom = async (value, fn) => {
   const original = Math.random;
@@ -144,7 +150,7 @@ test("promoted: passes to origin with token and response id, forged headers drop
   assert.strictEqual(res.headers["x-ch-responseid"][0].value, "resp1");
   assert.strictEqual(res.headers["x-ch-api-endpoint"][0].value, "api.test.example");
   assert.strictEqual(calls[0].options.method, "GET");
-  assert(Object.keys(res.headers).every((k) => k === k.toLowerCase()), "header keys must be lowercase");
+  assertLowercaseKeys(res.headers);
 });
 
 test("static asset: forged control headers are stripped, no API call", async ({ open }) => {
@@ -176,6 +182,7 @@ test("queued: redirects to the waiting room and sets the cookie", async ({ open 
   assert(location(res).includes("ch-id=tok0new1"));
   assert.strictEqual(res.headers["set-cookie"][0].value, "crowdhandler=tok0new1; path=/; Secure");
   assert.strictEqual(calls[0].options.method, "POST");
+  assertLowercaseKeys(res.headers);
 });
 
 test("only ch-* parameters: origin sees an empty query string", async ({ open }) => {
@@ -219,7 +226,44 @@ test("API 4xx: safety net even with failTrust on, no 'null' token in the URL", a
   assert(location(res).includes("ch-id=&ch-public-key="), location(res));
 });
 
-test("API timeout and unreadable body: follow failTrust", async ({ open, closed }) => {
+test("API timeout and network error: follow failTrust", async ({ open, closed }) => {
+  for (const outcome of [{ hang: true }, { error: true }]) {
+    respond = () => outcome;
+    for (const cookie of [undefined, "crowdhandler=tok0abc123"]) {
+      const started = Date.now();
+      assert.strictEqual((await open.viewerRequest(viewerRequestEvent({ cookie }))).status, undefined);
+      const res = await closed.viewerRequest(viewerRequestEvent({ cookie }));
+      assert.strictEqual(res.status, "302");
+      assert(location(res).startsWith("https://shop.example.com/ch/?url="), location(res));
+      // Two check-ins, each cut off by the 2s API timeout at the latest.
+      assert(Date.now() - started < 5000, `took ${Date.now() - started}ms`);
+    }
+  }
+});
+
+test("safety net URL: ch-code and token cannot add parameters of their own", async ({ closed }) => {
+  respond = () => ({ status: 503, body: "" });
+  const res = await closed.viewerRequest(viewerRequestEvent({ querystring: "ch-code=" + encodeURIComponent("x&url=https://other.example#"), cookie: "crowdhandler=tok0abc&x=1" }));
+  const query = location(res).split("?")[1];
+  assert.deepStrictEqual(query.split("&").map((p) => p.split("=")[0]), ["url", "ch-code", "ch-id", "ch-public-key"]);
+  assert(!query.includes("#"), query);
+});
+
+test("ch-id without a digit: clean redirect, no cookie planted", async ({ open }) => {
+  respond = () => assert.fail("no API call expected");
+  const res = await open.viewerRequest(viewerRequestEvent({ querystring: "a=1&ch-id=notatoken" }));
+  assert.strictEqual(res.status, "302");
+  assert.strictEqual(location(res), "https://shop.example.com/tickets?a=1");
+  assert.strictEqual(res.headers["set-cookie"], undefined);
+});
+
+test("status 6 with failTrust on: token forwarded so the cookie is kept", async ({ open }) => {
+  respond = api({ status: 6, promoted: 0, token: "tok0thr1" });
+  const res = await open.viewerRequest(viewerRequestEvent());
+  assert.strictEqual(res.headers["x-ch-crowdhandler-token"][0].value, "tok0thr1");
+});
+
+test("unreadable API body: follows failTrust", async ({ open, closed }) => {
   respond = () => ({ status: 200, body: "<html>WAF</html>" });
   assert.strictEqual((await open.viewerRequest(viewerRequestEvent())).status, undefined);
   assert.strictEqual((await closed.viewerRequest(viewerRequestEvent())).status, "302");
@@ -295,6 +339,16 @@ test("viewer-response: nothing sent when not sampled, for static files or withou
   assert.strictEqual(noToken.headers["set-cookie"], undefined);
 });
 
+test("viewer-response: the report is not awaited beyond the flush, and the event loop is not waited for", async ({ open }) => {
+  respond = () => ({ flushOnly: true });
+  const context = {};
+  const started = Date.now();
+  await withRandom(SAMPLED, () => viewerResponse(open, responseEvent(), context));
+  assert.strictEqual(calls.length, 1);
+  assert(Date.now() - started < 200, `took ${Date.now() - started}ms`);
+  assert.strictEqual(context.callbackWaitsForEmptyEventLoop, false);
+});
+
 test("viewer-response: a hung API delays the response by the send budget at most", async ({ open }) => {
   for (const outcome of [{ hang: true }, { error: true }]) {
     respond = () => outcome;
@@ -333,8 +387,10 @@ test("origin-response: every 5xx reported with weight 1, 4xx sampled, successes 
 test("origin-response: a hung API never holds the response", async ({ open }) => {
   respond = () => ({ hang: true });
   const started = Date.now();
-  const res = await open.originResponse(responseEvent({ status: "500" }));
+  const context = {};
+  const res = await open.originResponse(responseEvent({ status: "500" }), context);
   assert.strictEqual(res.status, "500");
+  assert.strictEqual(context.callbackWaitsForEmptyEventLoop, false);
   assert(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
 });
 
@@ -349,6 +405,8 @@ test("override: serves the room template, and the status endpoint", async ({ ope
   assert.deepStrictEqual([calls[0].options.hostname, calls[0].options.path], ["wait.crowdhandler.com", "/room"]);
   const status = await open.originOverride(overrideEvent("/ch/status"));
   assert.strictEqual(JSON.parse(status.body).status, "ok");
+  assertLowercaseKeys(res.headers);
+  assertLowercaseKeys(status.headers);
 });
 
 test("override: failing template host gets three attempts, then the uncached inline room", async ({ open }) => {
@@ -358,6 +416,7 @@ test("override: failing template host gets three attempts, then the uncached inl
   assert.strictEqual(res.status, "200");
   assert(res.body.includes('http-equiv="refresh"'));
   assert.strictEqual(res.headers["cache-control"][0].value, "no-cache, no-store, must-revalidate");
+  assertLowercaseKeys(res.headers);
 });
 
 test("override: a template response cut off part-way is retried, then falls back", async ({ open }) => {
@@ -380,8 +439,15 @@ test("override: hung template host is cut off within the time budget", async ({ 
 
 // ---- runner ---------------------------------------------------------------
 (async () => {
-  const configure = (code) =>
-    replaceOnce(replaceOnce(code, '"CROWDHANDLER_API_DOMAIN"', '"api.test.example"'), '"CROWDHANDLER_PUBLIC_KEY"', '"pk_test"');
+  // Exactly what generateLaunch.js does to build a customer bundle: replace the
+  // FIRST occurrence of each placeholder. Both must therefore be the config
+  // constants, which the assertions below pin.
+  const configure = (code) => {
+    const garnished = code.replace("CROWDHANDLER_PUBLIC_KEY", "pk_test").replace("CROWDHANDLER_API_DOMAIN", "api.test.example");
+    assert(garnished.includes('const publicKey = "pk_test";'), "first CROWDHANDLER_PUBLIC_KEY must be the publicKey constant");
+    assert(garnished.includes('const APIDomain = "api.test.example";'), "first CROWDHANDLER_API_DOMAIN must be the APIDomain constant");
+    return garnished;
+  };
   const failClosed = (code) => replaceOnce(configure(code), "const failTrust = true;", "const failTrust = false;");
   const customised = (code) =>
     replaceOnce(

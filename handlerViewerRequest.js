@@ -27,8 +27,10 @@ module.exports.viewerRequest = async (event) => {
   const waitingRoomEndpoint = (host) =>
     whitelabel === true ? `${host}/ch` : `wait.crowdhandler.com`;
   // Safety net waiting room URL: your custom slug if set, otherwise the generic fallback room.
+  // chCode comes from the visitor's query string and the token from their cookie: both are
+  // encoded so neither can add parameters of its own. targetURL is already encoded by every caller.
   const safetyNetURL = (host, targetURL, chCode, token) =>
-    `https://${waitingRoomEndpoint(host)}/${safetyNetSlug || ""}?url=${targetURL}&ch-code=${chCode}&ch-id=${token || ""}&ch-public-key=${publicKey}`;
+    `https://${waitingRoomEndpoint(host)}/${safetyNetSlug || ""}?url=${targetURL}&ch-code=${encodeURIComponent(chCode || "")}&ch-id=${encodeURIComponent(token || "")}&ch-public-key=${publicKey}`;
 
   // Captured before ch-code is stripped from the query string so the fail-closed
   // redirect in the catch block can still carry the visitor's priority code.
