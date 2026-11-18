@@ -28,6 +28,6 @@
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "express": "^4.21.2",
-    "query-string": "^7.0.1"
+    "query-string": "^10.0.0"
   }
 }
