@@ -6,6 +6,7 @@ export const API_TIMEOUT_MS = 2000;
 const dummyResponseData = {
   result: {
     status: 2,
+    serverError: true,
     token: null,
     title: null,
     position: null,

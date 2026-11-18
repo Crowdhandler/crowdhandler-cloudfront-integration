@@ -240,11 +240,15 @@ module.exports.viewerRequest = async (event) => {
   let result;
   try {
     result = JSON.parse(response).result;
+    if (!result || typeof result !== "object") {
+      throw new Error("response has no result");
+    }
   } catch (error) {
     console.error("Failed to parse API response:", error);
     // Fallback result triggers failTrust logic
     result = {
       status: 2,
+      serverError: true,
       promoted: null,
       token: null,
       slug: null,
@@ -273,15 +277,11 @@ module.exports.viewerRequest = async (event) => {
     console.error('[CH] API returned 4xx client error - redirecting to safety net');
     redirect = true;
     redirectLocation = safetyNetURL(host, targetURL, chCode, token);
-    // 5xx server error - respect failTrust setting
-  } else if (
-    failTrust !== true &&
-    result.promoted !== 1 &&
-    result.status === 2
-  ) {
+    // 5xx server error, timeout or unreadable response - respect failTrust setting
+  } else if (failTrust !== true && result.serverError === true) {
     redirect = true;
     redirectLocation = safetyNetURL(host, targetURL, chCode, token);
-    // User is promoted
+    // User is promoted, or the API answered status 2 (allowed through whatever failTrust says)
   } else {
     redirect = false;
   }
@@ -301,6 +301,10 @@ module.exports.viewerRequest = async (event) => {
   }
   // This code only executes if a redirect hasn't been triggered.
   // Pass information required by the response handler.
+  // A status 2 response that isn't a promotion carries nothing to forward.
+  if (result.promoted !== 1 && result.status === 2) {
+    return request;
+  }
   if (result.token) {
     requestHeaders["x-ch-crowdhandler-token"] = [
       {

@@ -216,6 +216,16 @@ test("API timeout and unreadable body: follow failTrust", async ({ open, closed 
   assert.strictEqual((await closed.viewerRequest(viewerRequestEvent())).status, "302");
 });
 
+test("genuine status 2 (not promoted): allowed whatever failTrust says, no token forwarded", async ({ open, closed }) => {
+  respond = api({ status: 2, promoted: 0, token: "tok0abc123", responseID: "resp1" });
+  for (const fns of [open, closed]) {
+    const res = await fns.viewerRequest(viewerRequestEvent({ cookie: "crowdhandler=tok0abc123" }));
+    assert.strictEqual(res.status, undefined);
+    assert.strictEqual(res.headers["x-ch-crowdhandler-token"], undefined);
+    assert.strictEqual(res.headers["x-ch-responseid"], undefined);
+  }
+});
+
 test("unexpected error: fail open with failTrust on, safety net with it off", async ({ open, closed }) => {
   respond = () => assert.fail("no API call expected");
   const broken = () => {
