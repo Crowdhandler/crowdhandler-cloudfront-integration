@@ -1,6 +1,5 @@
 "use strict";
 
-const helpers = require("./helpers/misc");
 const http_helpers = require("./helpers/http");
 
 require("source-map-support").install();
@@ -27,19 +26,34 @@ module.exports.originOverride = async (event) => {
     return http_helpers.statusResponse();
   }
 
-  // Template fetch with retry mechanic.
+  // Template fetch with retry mechanic, governed by a total wall-clock budget
+  // so a slow template host can't eat the Lambda's time limit. Each attempt
+  // gets up to 1600ms (a cache-miss at the template host can take ~1s, so a
+  // flat short deadline would false-positive on cold fetches) and never more
+  // than the budget's remainder.
+  const TOTAL_FETCH_BUDGET_MS = 4000;
+  const PER_FETCH_CAP_MS = 1600;
+  // Don't launch an attempt with less than this left - a near-zero slice is a
+  // guaranteed-failed fetch; go straight to the fallback instead.
+  const MIN_FETCH_SLICE_MS = 250;
+  const MAX_FETCH_ATTEMPTS = 3;
+  const fetchStartedAt = Date.now();
   let fetchCounter = 0;
-  async function fetchTemplate(retry) {
+  async function fetchTemplate() {
     let headers = {
       "Content-Type": "text/html",
     };
     let response;
     fetchCounter++;
 
-    if (fetchCounter === 3) {
+    // Last attempt: fall back to the generic template.
+    if (fetchCounter === MAX_FETCH_ATTEMPTS) {
       templatePath = fallbackPath;
     }
 
+    // max(1) guards the falsy-0 edge if scheduling delay ate the slice
+    // between the loop check and here.
+    const remaining = TOTAL_FETCH_BUDGET_MS - (Date.now() - fetchStartedAt);
     try {
       response = await http_helpers.httpGET({
         headers: headers,
@@ -47,6 +61,7 @@ module.exports.originOverride = async (event) => {
         method: "GET",
         path: templatePath,
         port: 443,
+        timeout: Math.min(PER_FETCH_CAP_MS, Math.max(remaining, 1)),
       });
       return response;
     } catch (error) {
@@ -57,16 +72,25 @@ module.exports.originOverride = async (event) => {
   }
 
   let templateBody;
-  while (!templateBody && fetchCounter < 4) {
+  while (
+    !templateBody &&
+    fetchCounter < MAX_FETCH_ATTEMPTS &&
+    TOTAL_FETCH_BUDGET_MS - (Date.now() - fetchStartedAt) >= MIN_FETCH_SLICE_MS
+  ) {
     templateBody = await fetchTemplate();
   }
 
   if (templateBody) {
     let healthyResponse = http_helpers.http200Response(templateBody);
     return healthyResponse;
-    // Handle failure to retrieve template
   } else {
-    let errorResponse = http_helpers.error404Response();
-    return errorResponse;
+    // Template host unreachable - serve the inline fallback room rather than
+    // an error page to a queued visitor. The meta refresh retries shortly, by
+    // which point the template host has usually recovered and the visitor
+    // gets the proper branded room.
+    console.error(
+      `[CH] Template fetch failed ${fetchCounter}x from ${templateDomain} - serving inline fallback`
+    );
+    return http_helpers.fallbackWaitingRoomResponse();
   }
 };
