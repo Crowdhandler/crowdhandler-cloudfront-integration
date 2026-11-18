@@ -65,7 +65,8 @@ module.exports.originOverride = async (event) => {
       });
       return response;
     } catch (error) {
-      console.error('Template fetch failed:', error);
+      // httpGET has already logged the cause; its rejection value is only a placeholder.
+      console.error(`[CH] Template fetch attempt ${fetchCounter} failed`);
       response = null;
       return response;
     }
