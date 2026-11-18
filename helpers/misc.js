@@ -30,6 +30,17 @@ export const creativeAssetExtensions = [
   "xml",
 ];
 
+// What a CrowdHandler token may look like. Tokens are short URL-safe strings
+// that always carry a digit (e.g. tok0RBHG4n25KRDl). Anything else is
+// discarded and the visitor checks in as new. The character class matters as
+// much as the digit: a token goes into the API request path and into a
+// Set-Cookie header, so it must not be able to carry anything else.
+const TOKEN_SHAPE = /^(?=.*\d)[A-Za-z0-9_-]{4,128}$/;
+
+export const isValidToken = function (value) {
+  return typeof value === "string" && TOKEN_SHAPE.test(value);
+};
+
 export const parseCookies = function (headers) {
   const parsedCookie = {};
   if (headers.cookie) {

@@ -2,12 +2,12 @@
 
 const helpers = require("./helpers/misc");
 const http_helpers = require("./helpers/http");
+const perf = require("./helpers/perf");
 
 require("source-map-support").install();
 
 module.exports.viewerRequest = async (event) => {
   let request = event.Records[0].cf.request;
-  try {
   // Environment Setup
   const APIDomain = "CROWDHANDLER_API_DOMAIN";
   // If  failtrust is false, users that fail to check-in with CrowdHandler will be sent to waiting room.
@@ -18,9 +18,37 @@ module.exports.viewerRequest = async (event) => {
   let safetyNetSlug;
   // Set whitelabel to true to redirect users to a waiting room on your site domain. See setup guide for more info.
   const whitelabel = true;
+  // If CloudFront sits behind another proxy, set this to the lowercase name of the header that carries
+  // the visitor's IP address (e.g. "cf-connecting-ip" for Cloudflare, "incap-client-ip" for Imperva).
+  // Only set it if visitors cannot reach the distribution directly, as the header is otherwise spoofable.
+  let trustedClientIPHeader;
 
+  // Waiting room endpoint. On your site domain when whitelabel is on.
+  const waitingRoomEndpoint = (host) =>
+    whitelabel === true ? `${host}/ch` : `wait.crowdhandler.com`;
+  // Safety net waiting room URL: your custom slug if set, otherwise the generic fallback room.
+  // chCode comes from the visitor's query string and the token from their cookie: both are
+  // encoded so neither can add parameters of its own. targetURL is already encoded by every caller.
+  const safetyNetURL = (host, targetURL, chCode, token) =>
+    `https://${waitingRoomEndpoint(host)}/${safetyNetSlug || ""}?url=${targetURL}&ch-code=${encodeURIComponent(chCode || "")}&ch-id=${encodeURIComponent(token || "")}&ch-public-key=${publicKey}`;
+
+  // Captured before ch-code is stripped from the query string so the fail-closed
+  // redirect in the catch block can still carry the visitor's priority code.
+  let chCodeForFailClosed = "";
+
+  try {
   // Extract request Meta Information
   let requestHeaders = request.headers;
+
+  // Strip any viewer-supplied copies of the internal control headers first,
+  // before anything that can throw or return early, so forged values can't
+  // reach the response handlers on any path (including the fail-open one).
+  delete requestHeaders["x-ch-crowdhandler-token"];
+  delete requestHeaders["x-ch-responseid"];
+  delete requestHeaders["x-ch-api-endpoint"];
+  delete requestHeaders["x-ch-public-key"];
+  delete requestHeaders["x-ch-request-time"];
+
   const host = requestHeaders.host[0].value;
 
   // Forward api endpoint and public key value as headers so our viewer response function has them at hand to use
@@ -64,11 +92,8 @@ module.exports.viewerRequest = async (event) => {
   const FQDN = `https://${host}${uri}`;
 
   // Don't try and queue static assets
-  let fileExtension = uri.split(".").pop();
-
   // No need to execute anymore of this script if the request is for a static file.
-  const creativeAssetExtensions = helpers.creativeAssetExtensions;
-  if (creativeAssetExtensions.indexOf(fileExtension) !== -1) {
+  if (perf.isStaticAsset(uri)) {
     return request;
   }
 
@@ -85,12 +110,17 @@ module.exports.viewerRequest = async (event) => {
   } = queryString || {};
 
   // This is the right most address found in the x-forwarded-for header and can be trusted as it was discovered via the TCP connection.
-  const IPAddress = request.clientIp || null;
+  // A configured trustedClientIPHeader takes precedence when the request carries it.
+  const IPAddress =
+    (trustedClientIPHeader && requestHeaders[trustedClientIPHeader]?.[0]?.value) ||
+    request.clientIp ||
+    null;
 
   // Make sure we don't try and use undefined or null in parameters
   if (!chCode || chCode === "undefined" || chCode === "null") {
     chCode = "";
   }
+  chCodeForFailClosed = chCode;
 
   // Remove special params from the queryString object now that we don't need them anymore
   if (queryString) {
@@ -104,10 +134,11 @@ module.exports.viewerRequest = async (event) => {
 
   // Stringify queryString
   queryString = helpers.queryStringParse(queryString, "string");
-  // Prepend & to the query string if it's not empty as we're always going to need to chain it to ?${FQDN}
+  // Update the querystring to remove special CH parameters. When every parameter
+  // was one of ours the origin must see no query string at all.
+  request.querystring = queryString || "";
+  // Prepend ? to the query string if it's not empty as we're always going to need to chain it to ${FQDN}
   if (queryString) {
-    //Update the querystring to remove special CH parameters
-    request.querystring = queryString;
     queryString = `?${queryString}`;
   }
 
@@ -140,9 +171,10 @@ module.exports.viewerRequest = async (event) => {
     tokenSource = 'new';
   }
 
-  // Validate token format - must contain at least one digit
-  const validToken = /(.*\d+.*)/;
-  if (token && !validToken.test(token)) {
+  // Validate token format - URL-safe characters only, with at least one digit (see helpers/misc.js).
+  // A malformed token is discarded, so it is never planted as a cookie and the visitor checks in as new.
+  if (token && !helpers.isValidToken(token)) {
+    console.log("[CH] token discarded (malformed)");
     token = null;
     tokenSource = 'new';
   }
@@ -179,7 +211,7 @@ module.exports.viewerRequest = async (event) => {
           headers: headers,
           hostname: APIDomain,
           method: "GET",
-          path: `/v1/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
+          path: `/v1/requests/${encodeURIComponent(token)}?url=${targetURL}&agent=${encodeURIComponent(userAgent)}&ip=${encodeURIComponent(
             IPAddress
           )}&lang=${encodeURIComponent(language)}`,
           port: 443,
@@ -204,7 +236,14 @@ module.exports.viewerRequest = async (event) => {
       response = await Promise.race([apiCall, timeoutPromise]);
     } catch (error) {
       console.error('CrowdHandler API call failed:', error.message || error);
-      response = error;
+      // A request Node refused to build (ERR_UNESCAPED_CHARACTERS, ERR_INVALID_CHAR, ...) is our own
+      // input being malformed, never the API failing, so it is handled like a 4xx: always the safety net.
+      // Network errors carry codes such as ECONNRESET and ETIMEDOUT, not the ERR_ prefix.
+      if (error && typeof error.code === "string" && error.code.indexOf("ERR_") === 0) {
+        response = JSON.stringify(http_helpers.clientErrorResponseData);
+      } else {
+        response = error;
+      }
     } finally {
       clearTimeout(timeoutHandle);
       return response;
@@ -215,11 +254,15 @@ module.exports.viewerRequest = async (event) => {
   let result;
   try {
     result = JSON.parse(response).result;
+    if (!result || typeof result !== "object") {
+      throw new Error("response has no result");
+    }
   } catch (error) {
     console.error("Failed to parse API response:", error);
     // Fallback result triggers failTrust logic
     result = {
       status: 2,
+      serverError: true,
       promoted: null,
       token: null,
       slug: null,
@@ -229,21 +272,8 @@ module.exports.viewerRequest = async (event) => {
 
   let redirect;
   let redirectLocation;
-  let WREndpoint;
-
   // Alter queue endpoint based on whitelabel flag value
-  switch (whitelabel) {
-    case true:
-      WREndpoint = `${host}/ch`;
-      break;
-    case false: {
-      WREndpoint = `wait.crowdhandler.com`;
-      break;
-    }
-    default:
-      WREndpoint = `wait.crowdhandler.com`;
-      break;
-  }
+  const WREndpoint = waitingRoomEndpoint(host);
 
   // Throttle response (status 6) - treated as a server error, respect failTrust setting
   if (result.status === 6 && failTrust === true) {
@@ -251,39 +281,21 @@ module.exports.viewerRequest = async (event) => {
   } else if (result.status === 6) {
     console.error("[CH] API throttle response (status 6) - redirecting to safety net");
     redirect = true;
-    if (safetyNetSlug) {
-      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
-    } else {
-      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
-    }
+    redirectLocation = safetyNetURL(host, targetURL, chCode, result.token);
     // Normal healthy response
   } else if (result.promoted !== 1 && result.status !== 2) {
     redirect = true;
-    redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${result.token}&ch-public-key=${publicKey}`;
+    redirectLocation = `https://${WREndpoint}/${result.slug}?url=${targetURL}&ch-code=${encodeURIComponent(chCode || "")}&ch-id=${encodeURIComponent(result.token || "")}&ch-public-key=${publicKey}`;
     // 4xx client error - always redirect to safety net (ignore failTrust)
   } else if (result.clientError === true) {
     console.error('[CH] API returned 4xx client error - redirecting to safety net');
     redirect = true;
-    if (safetyNetSlug) {
-      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
-    } else {
-      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
-    }
-    // 5xx server error - respect failTrust setting
-  } else if (
-    failTrust !== true &&
-    result.promoted !== 1 &&
-    result.status === 2
-  ) {
+    redirectLocation = safetyNetURL(host, targetURL, chCode, token);
+    // 5xx server error, timeout or unreadable response - respect failTrust setting
+  } else if (failTrust !== true && result.serverError === true) {
     redirect = true;
-    if (safetyNetSlug) {
-      // Your custom slug
-      redirectLocation = `https://${WREndpoint}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
-    } else {
-      // Generic fallback room
-      redirectLocation = `https://${WREndpoint}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${publicKey}`;
-    }
-    // User is promoted
+    redirectLocation = safetyNetURL(host, targetURL, chCode, token);
+    // User is promoted, or the API answered status 2 (allowed through whatever failTrust says)
   } else {
     redirect = false;
   }
@@ -303,6 +315,10 @@ module.exports.viewerRequest = async (event) => {
   }
   // This code only executes if a redirect hasn't been triggered.
   // Pass information required by the response handler.
+  // A status 2 response that isn't a promotion carries nothing to forward.
+  if (result.promoted !== 1 && result.status === 2) {
+    return request;
+  }
   if (result.token) {
     requestHeaders["x-ch-crowdhandler-token"] = [
       {
@@ -312,9 +328,9 @@ module.exports.viewerRequest = async (event) => {
     ];
   }
   if (result.responseID) {
-    requestHeaders["x-ch-responseID"] = [
+    requestHeaders["x-ch-responseid"] = [
       {
-        key: "x-ch-responseID",
+        key: "x-ch-responseid",
         value: result.responseID,
       },
     ];
@@ -322,7 +338,25 @@ module.exports.viewerRequest = async (event) => {
 
   return request;
   } catch (error) {
-    console.error('[CH] Unhandled error in viewerRequest - failing open:', error);
-    return request;
+    console.error('[CH] Unhandled error in viewerRequest:', error);
+    // Fail open unless failTrust is off, in which case go to the safety net.
+    if (failTrust === true) {
+      return request;
+    }
+    try {
+      const host = request.headers.host[0].value;
+      const targetURL = encodeURIComponent(
+        `https://${host}${request.uri}${request.querystring ? "?" + request.querystring : ""}`
+      );
+      const cookieToken = helpers.parseCookies(request.headers)["crowdhandler"] || "";
+      return http_helpers.redirect302Response(
+        safetyNetURL(host, targetURL, chCodeForFailClosed, cookieToken),
+        cookieToken
+      );
+    } catch (redirectError) {
+      // Can't even build the redirect - nothing left but to let the request through.
+      console.error('[CH] Could not build safety net redirect - failing open:', redirectError);
+      return request;
+    }
   }
 };

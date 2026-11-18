@@ -1,114 +1,52 @@
 "use strict";
 
-const helpers = require("./helpers/misc");
-const http_helpers = require("./helpers/http");
+const perf = require("./helpers/perf");
 
 require("source-map-support").install();
 
-module.exports.originResponse = async (event) => {
+/**
+ * Origin Response Handler
+ *
+ * Reports performance for ORIGIN ERROR responses (status >= 400): 4xx sampled
+ * like successes, 5xx reported on every occurrence. CloudFront never invokes
+ * viewer-response for those, so without this they would vanish from the
+ * performance data entirely. Successes are sampled at viewer-response (cache
+ * hits and misses alike); each response is seen by exactly one of the two.
+ *
+ * Still invisible to any trigger: errors CloudFront generates itself, e.g.
+ * origin read timeouts (504). Those only appear in CloudFront logs.
+ */
+module.exports.originResponse = async (event, context) => {
   let response = event.Records[0].cf.response;
-  try {
-  let APIDomain;
-  let crowdhandlerResponseID;
-  let crowdhandlerToken;
-  let publicKey;
-  let requestTime;
-
-  // Infer useful information from the request event and save it
-  let request = event.Records[0].cf.request;
-  const requestHeaders = request.headers;
-  const uri = request.uri;
-
-  // Don't try and queue static assets
-  let fileExtension = uri.split(".").pop();
-
-  // No need to execute anymore of this script if the request is for a static file.
-  const creativeAssetExtensions = helpers.creativeAssetExtensions;
-  if (creativeAssetExtensions.indexOf(fileExtension) !== -1) {
-    return response;
+  // Belt and braces: the sample's background response-drain must never hold
+  // the invocation open once the response is returned.
+  if (context) {
+    context.callbackWaitsForEmptyEventLoop = false;
   }
+  try {
+    const request = event.Records[0].cf.request;
+    const requestHeaders = request.headers;
 
-  // Environment Setup
-  (function () {
-    // Guard against the crowdhandlerResponseID value coming back null from the API
-    try {
-      if (requestHeaders["x-ch-responseid"]) {
-        crowdhandlerResponseID = requestHeaders["x-ch-responseid"][0].value;
-      }
-    } catch (error) {
-      console.error(error);
-    }
-
-    // Handle lack of valid token i.e. partial API responses for unprotected rooms.
-    try {
-      //Make sure we don't set invalid values
-      const validToken = /(.*\d+.*)/;
-
-      if (
-        requestHeaders["x-ch-crowdhandler-token"] &&
-        validToken.test(requestHeaders["x-ch-crowdhandler-token"][0].value) ===
-          true
-      ) {
-        crowdhandlerToken = requestHeaders["x-ch-crowdhandler-token"][0].value;
-      }
-    } catch (error) {
-      console.error(error);
+    // Static files are never queued, so never reported.
+    if (perf.isStaticAsset(request.uri)) {
       return response;
     }
 
-    APIDomain = requestHeaders["x-ch-api-endpoint"]?.[0]?.value;
-    publicKey = requestHeaders["x-ch-public-key"]?.[0]?.value;
-    requestTime = requestHeaders["x-ch-request-time"]?.[0]?.value;
-  })();
+    const status = parseInt(response.status, 10);
+    // Successes are sampled at viewer-response; only errors are ours here.
+    // Only token-bearing (checked-in) requests, matching viewer-response.
+    if (!(status >= 400) || !perf.forwardedToken(requestHeaders)) {
+      return response;
+    }
 
-  // If we don't have required headers or a valid crowdhandlerToken, return response early.
-  if (!crowdhandlerToken || !APIDomain || !publicKey || !requestTime) {
+    // 4xx sampled like everything else; 5xx reported every time.
+    const send = perf.maybeSendPerfSample(requestHeaders, response.status, "origin-response", {
+      always: status >= 500,
+    });
+    if (send) {
+      await send;
+    }
     return response;
-  }
-
-  // Requested Domain
-  const host = requestHeaders.host[0].value;
-
-  // Cookies now set in viewer-response (fires on cached responses too)
-
-  const totalLoadTime = Date.now() - requestTime;
-
-  async function sendPageLoadTime() {
-    let response;
-    try {
-      response = await http_helpers.httpPUT(
-        {
-          hostname: APIDomain,
-          port: 443,
-          path: `/v1/responses/${crowdhandlerResponseID}`,
-          method: "PUT",
-          headers: {
-            "x-api-key": publicKey,
-            "Content-Type": "application/json",
-          },
-        },
-        JSON.stringify({
-          httpCode: 200,
-          sampleRate: 10,
-          time: totalLoadTime,
-        })
-      );
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  // We don't want to send page performance information on every request so sampling is used.
-  const sampleRate = Math.floor(Math.random() * 10);
-
-  if (sampleRate === 9) {
-    try {
-      await sendPageLoadTime();
-    } catch (error) {
-      console.error(error);
-    }
-  }
-  return response;
   } catch (error) {
     console.error('[CH] Unhandled error in originResponse - failing open:', error);
     return response;
